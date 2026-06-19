@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { cn, formatCOP } from '../lib/utils'
 import { infoEstado, siguienteEstado, type EstadoPedido, type Pedido } from '../lib/types'
-
+import { supabase } from '../lib/supabase'
 type Props = {
   pedido: Pedido
   onClose: () => void
@@ -12,7 +12,20 @@ export default function PedidoDetalle({ pedido, onClose, onCambiarEstado }: Prop
   const info = infoEstado(pedido.estado)
   const siguiente = siguienteEstado(pedido.estado, pedido.tipo_entrega)
   const esRecoge = pedido.tipo_entrega === 'recoge' || pedido.tipo_entrega === 'mesa'
+  const [tiempoInput, setTiempoInput] = useState('')
 
+async function avanzarConTiempo(p: Pedido, nuevoEstado: EstadoPedido) {
+  // Si pasa de confirmado a preparando, fija el tiempo estimado
+  if (p.estado === 'confirmado') {
+    const minutos = tiempoInput.trim() ? parseInt(tiempoInput, 10) : null
+    await supabase.rpc('fijar_tiempo_estimado', {
+      p_pedido_id: p.id,
+      p_minutos: minutos,      // null = automático
+      p_origen: minutos ? 'panel' : 'automatico'
+    })
+  }
+  onCambiarEstado(p, nuevoEstado)
+}
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose()
@@ -140,12 +153,31 @@ export default function PedidoDetalle({ pedido, onClose, onCambiarEstado }: Prop
             </div>
           </section>
 
+          {/* Acciones */}
           {pedido.estado !== 'entregado' && pedido.estado !== 'cancelado' && (
             <section className="space-y-2 pt-2">
               <Label>Acciones</Label>
+
+              {/* Input de tiempo: solo al pasar de confirmado a preparando */}
+              {pedido.estado === 'confirmado' && siguiente && (
+                <div className="mb-2">
+                  <label className="block text-[11px] text-mute mb-1">
+                    Tiempo estimado (opcional, en minutos)
+                  </label>
+                  <input
+                    type="number"
+                    value={tiempoInput}
+                    onChange={e => setTiempoInput(e.target.value)}
+                    placeholder="Vacío = automático según rango"
+                    min={0}
+                    className="w-full px-3 py-2 bg-white border border-line rounded-lg text-sm tnum focus:outline-none focus:ring-2 focus:ring-oso-300 focus:border-oso-400"
+                  />
+                </div>
+              )}
+
               {siguiente && (
                 <button
-                  onClick={() => onCambiarEstado(pedido, siguiente)}
+                  onClick={() => avanzarConTiempo(pedido, siguiente)}
                   className="w-full bg-oso-600 text-white py-3 rounded-lg font-medium hover:bg-oso-700 transition-colors"
                 >
                   Marcar como {infoEstado(siguiente).label}
