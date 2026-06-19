@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { cn, formatCOP } from '../lib/utils'
 import { infoEstado, siguienteEstado, type EstadoPedido, type Pedido } from '../lib/types'
 import { supabase } from '../lib/supabase'
