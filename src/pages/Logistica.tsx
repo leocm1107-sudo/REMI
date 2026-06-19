@@ -26,7 +26,6 @@ type RangoTiempo = {
 
 type ConfigRestaurante = {
   id: string
-  hora_apertura: string | null
   minutos_antes_preguntar: number | null
   minutos_antes_jefe: number | null
   modo_notificacion: string | null
@@ -49,6 +48,10 @@ export default function Logistica({ session }: { session: Session }) {
   const [cola, setCola]         = useState<ColaItem[]>([])
   const [rangos, setRangos]     = useState<RangoTiempo[]>([])
   const [config, setConfig]     = useState<ConfigRestaurante | null>(null)
+  const [apertura, setApertura] = useState('')
+  const [cierre, setCierre]     = useState('')
+  const [guardandoHorario, setGuardandoHorario] = useState(false)
+  const [horarioGuardado, setHorarioGuardado]   = useState(false)
   const [cargando, setCargando] = useState(true)
   const [restauranteId, setRestauranteId] = useState<string | null>(null)
 
@@ -66,18 +69,23 @@ export default function Logistica({ session }: { session: Session }) {
         const rid = (u.data as any).restaurante_id
         setRestauranteId(rid)
 
-        const [cola, rangos, cfg] = await Promise.all([
+        const [cola, rangos, cfg, horario] = await Promise.all([
           supabase.from('v_cola_hoy').select('*'),
           supabase.from('config_tiempos').select('id, tipo, orden, etiqueta')
             .eq('restaurante_id', rid).order('tipo').order('orden'),
           supabase.from('restaurantes')
-            .select('id, hora_apertura, minutos_antes_preguntar, minutos_antes_jefe, modo_notificacion, rango_cocina_activo, rango_domicilio_activo')
-            .eq('id', rid).single()
+            .select('id, minutos_antes_preguntar, minutos_antes_jefe, modo_notificacion, rango_cocina_activo, rango_domicilio_activo')
+            .eq('id', rid).single(),
+          supabase.rpc('obtener_horario_unificado', { p_restaurante_id: rid })
         ])
         if (!activo) return
         if (cola.data)   setCola(cola.data as ColaItem[])
         if (rangos.data) setRangos(rangos.data as RangoTiempo[])
         if (cfg.data)    setConfig(cfg.data as ConfigRestaurante)
+        if (horario.data) {
+          setApertura((horario.data as any).apertura ?? '')
+          setCierre((horario.data as any).cierre ?? '')
+        }
       }
       setCargando(false)
     }
@@ -125,6 +133,24 @@ export default function Logistica({ session }: { session: Session }) {
     if (error) alert('No se pudo cambiar el rango: ' + error.message)
   }
 
+  async function guardarHorario() {
+    if (!restauranteId || !apertura || !cierre) return
+    setGuardandoHorario(true)
+    setHorarioGuardado(false)
+    const { error } = await supabase.rpc('actualizar_horario_unificado', {
+      p_restaurante_id: restauranteId,
+      p_apertura: apertura,
+      p_cierre: cierre
+    })
+    setGuardandoHorario(false)
+    if (error) {
+      alert('No se pudo guardar el horario: ' + error.message)
+    } else {
+      setHorarioGuardado(true)
+      setTimeout(() => setHorarioGuardado(false), 2500)
+    }
+  }
+
   async function resolverPedido(item: ColaItem, accion: 'confirmar' | 'cancelar') {
     const verbo = accion === 'confirmar' ? 'confirmar' : 'cancelar'
     if (!confirm(`¿${verbo} el pedido ${item.numero_pedido} (turno #${item.turno_dia})?`)) return
@@ -149,6 +175,8 @@ export default function Logistica({ session }: { session: Session }) {
   if (cargando) {
     return <div className="text-center text-mute py-20 text-sm">Cargando logística…</div>
   }
+
+  const horarioCambio = apertura && cierre
 
   return (
     <>
@@ -258,18 +286,48 @@ export default function Logistica({ session }: { session: Session }) {
         <section>
           <h2 className="font-display text-lg font-semibold tracking-tight mb-3">Configuración</h2>
           <div className="bg-surface border border-line rounded-xl p-5 space-y-5">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-              <div>
-                <label className="block text-xs font-medium uppercase tracking-wider text-mute mb-1.5">
-                  Hora de apertura
-                </label>
-                <input
-                  type="time"
-                  value={config.hora_apertura?.slice(0, 5) ?? ''}
-                  onChange={e => guardarConfig({ hora_apertura: e.target.value })}
-                  className="w-full px-3 py-2 bg-white border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300 focus:border-oso-400"
-                />
+
+            {/* Horario (apertura + cierre, mismo para todos los días) */}
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wider text-mute mb-2">
+                Horario de atención (aplica todos los días)
+              </label>
+              <div className="flex items-end gap-3 flex-wrap">
+                <div>
+                  <span className="block text-[11px] text-mute mb-1">Abre</span>
+                  <input
+                    type="time"
+                    value={apertura}
+                    onChange={e => setApertura(e.target.value)}
+                    className="px-3 py-2 bg-white border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300 focus:border-oso-400"
+                  />
+                </div>
+                <div>
+                  <span className="block text-[11px] text-mute mb-1">Cierra</span>
+                  <input
+                    type="time"
+                    value={cierre}
+                    onChange={e => setCierre(e.target.value)}
+                    className="px-3 py-2 bg-white border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300 focus:border-oso-400"
+                  />
+                </div>
+                <button
+                  onClick={guardarHorario}
+                  disabled={guardandoHorario || !horarioCambio}
+                  className="px-4 py-2 bg-oso-600 text-white rounded-lg text-sm font-medium hover:bg-oso-700 disabled:opacity-50 transition-colors"
+                >
+                  {guardandoHorario ? 'Guardando…' : 'Guardar horario'}
+                </button>
+                {horarioGuardado && (
+                  <span className="text-sm text-green-700 font-medium">✓ Guardado</span>
+                )}
               </div>
+              <p className="text-xs text-mute mt-2">
+                Este horario controla cuándo el bot toma pedidos normales vs los pone en cola.
+              </p>
+            </div>
+
+            <div className="border-t border-line pt-5 grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
                 <label className="block text-xs font-medium uppercase tracking-wider text-mute mb-1.5">
                   Min. antes (preguntar cliente)
@@ -296,7 +354,7 @@ export default function Logistica({ session }: { session: Session }) {
               </div>
             </div>
 
-            <div>
+            <div className="border-t border-line pt-5">
               <label className="block text-xs font-medium uppercase tracking-wider text-mute mb-2">
                 Cómo recibe los pedidos el jefe
               </label>
