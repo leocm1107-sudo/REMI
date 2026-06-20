@@ -7,6 +7,7 @@ import Restablecer from './pages/Restablecer'
 import Pedidos from './pages/Pedidos'
 import Menu from './pages/Menu'
 import Logistica from './pages/Logistica'
+import Usuarios from './pages/Usuarios'
 import Layout from './components/Layout'
 
 export default function App() {
@@ -21,7 +22,6 @@ export default function App() {
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s)
-      // Cuando el usuario llega desde el enlace de recuperación
       if (event === 'PASSWORD_RECOVERY') {
         setRecuperando(true)
       }
@@ -29,7 +29,6 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Detectar si la URL es la de restablecer (por si recarga la página ahí)
   const enRutaRestablecer =
     typeof window !== 'undefined' && window.location.pathname === '/restablecer'
 
@@ -41,7 +40,6 @@ export default function App() {
     )
   }
 
-  // Pantalla de restablecer: cuando viene del correo de recuperación
   if (recuperando || enRutaRestablecer) {
     return (
       <BrowserRouter>
@@ -62,6 +60,7 @@ export default function App() {
           <Route index element={<Pedidos session={session} />} />
           <Route path="menu" element={<Menu session={session} />} />
           <Route path="logistica" element={<Logistica session={session} />} />
+          <Route path="usuarios" element={<Usuarios session={session} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

@@ -23,6 +23,8 @@ export default function Layout({ session }: { session: Session }) {
     await supabase.auth.signOut()
   }
 
+  const esDueno = perfil?.rol === 'dueno'
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="bg-surface/80 backdrop-blur border-b border-line sticky top-0 z-20">
@@ -36,6 +38,7 @@ export default function Layout({ session }: { session: Session }) {
               <NavTab to="/" end>Pedidos</NavTab>
               <NavTab to="/menu">Menú</NavTab>
               <NavTab to="/logistica">Logística</NavTab>
+              {esDueno && <NavTab to="/usuarios">Usuarios</NavTab>}
             </nav>
           </div>
           <div className="flex items-center gap-4 text-sm">

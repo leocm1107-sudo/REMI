@@ -1,19 +1,24 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-type Modo = 'login' | 'recuperar'
+type Modo = 'login' | 'registro' | 'recuperar'
+
+// El restaurante al que pertenece ESTE panel (cada restaurante despliega el suyo)
+const RESTAURANTE_ID = import.meta.env.VITE_RESTAURANTE_ID as string
 
 export default function Login() {
   const [modo, setModo]         = useState<Modo>('login')
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
+  const [nombre, setNombre]     = useState('')
   const [cargando, setCargando] = useState(false)
   const [error, setError]       = useState('')
   const [aviso, setAviso]       = useState('')
 
+  function limpiar() { setError(''); setAviso('') }
+
   async function iniciarSesion() {
-    setError('')
-    setAviso('')
+    limpiar()
     if (!email.trim() || !password) {
       setError('Escribe tu correo y contraseña')
       return
@@ -25,23 +30,62 @@ export default function Login() {
     })
     setCargando(false)
     if (error) {
-      // Mensajes más claros para los casos comunes
       if (error.message.toLowerCase().includes('invalid login')) {
         setError('Correo o contraseña incorrectos')
       } else if (error.message.toLowerCase().includes('email not confirmed')) {
-        setError('Tu cuenta no está confirmada. Pídele al administrador que la active.')
+        setError('Tu cuenta no está confirmada todavía.')
       } else {
         setError(error.message)
       }
     }
-    // Si entra bien, el onAuthStateChange del App detecta la sesión solo
+  }
+
+  async function registrarse() {
+    limpiar()
+    if (!nombre.trim()) { setError('Escribe tu nombre'); return }
+    if (!email.trim()) { setError('Escribe tu correo'); return }
+    if (password.length < 6) { setError('La contraseña debe tener al menos 6 caracteres'); return }
+    if (!RESTAURANTE_ID) {
+      setError('Este panel no tiene restaurante configurado. Avísale al administrador.')
+      return
+    }
+
+    setCargando(true)
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: {
+        // El trigger del servidor lee estos datos. NO mandamos rol:
+        // el rol siempre lo fija el servidor como 'empleado'.
+        data: {
+          nombre: nombre.trim(),
+          restaurante_id: RESTAURANTE_ID
+        }
+      }
+    })
+    setCargando(false)
+
+    if (error) {
+      if (error.message.toLowerCase().includes('already registered')) {
+        setError('Ese correo ya tiene cuenta. Intenta iniciar sesión.')
+      } else {
+        setError(error.message)
+      }
+      return
+    }
+
+    if (data.session) {
+      // Registro inmediato (sin confirmación de correo): el App entra solo.
+    } else {
+      setAviso('¡Cuenta creada! Si te pide confirmar el correo, revisa tu bandeja. Si no, ya puedes iniciar sesión.')
+      setModo('login')
+    }
   }
 
   async function recuperarContrasena() {
-    setError('')
-    setAviso('')
+    limpiar()
     if (!email.trim()) {
-      setError('Escribe tu correo para enviarte el enlace de recuperación')
+      setError('Escribe tu correo para enviarte el enlace')
       return
     }
     setCargando(true)
@@ -49,31 +93,55 @@ export default function Login() {
       redirectTo: window.location.origin + '/restablecer'
     })
     setCargando(false)
-    if (error) {
-      setError(error.message)
-    } else {
-      setAviso('Te enviamos un correo con el enlace para restablecer tu contraseña. Revisa tu bandeja.')
-    }
+    if (error) setError(error.message)
+    else setAviso('Te enviamos un correo con el enlace para restablecer tu contraseña.')
   }
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (modo === 'login') iniciarSesion()
+    else if (modo === 'registro') registrarse()
     else recuperarContrasena()
   }
+
+  const titulo =
+    modo === 'login' ? 'Panel de administración' :
+    modo === 'registro' ? 'Crear cuenta' :
+    'Recuperar contraseña'
+
+  const textoBoton =
+    cargando ? 'Un momento…' :
+    modo === 'login' ? 'Entrar' :
+    modo === 'registro' ? 'Crear cuenta' :
+    'Enviar enlace'
 
   return (
     <div className="min-h-screen grid place-items-center bg-canvas px-4">
       <div className="w-full max-w-sm">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="text-4xl mb-2">🐻</div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">Don Oso</h1>
-          <p className="text-mute text-sm mt-1">Panel de administración</p>
+          <p className="text-mute text-sm mt-1">{titulo}</p>
         </div>
 
         <div className="bg-surface border border-line rounded-2xl p-6 shadow-sm">
           <form onSubmit={onSubmit} className="space-y-4">
+            {modo === 'registro' && (
+              <div>
+                <label className="block text-xs font-medium uppercase tracking-wider text-mute mb-1.5">
+                  Tu nombre
+                </label>
+                <input
+                  type="text"
+                  value={nombre}
+                  onChange={e => setNombre(e.target.value)}
+                  autoComplete="name"
+                  placeholder="Ej. Carlos"
+                  className="w-full px-3 py-2.5 bg-white border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300 focus:border-oso-400"
+                />
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-medium uppercase tracking-wider text-mute mb-1.5">
                 Correo
@@ -88,7 +156,7 @@ export default function Login() {
               />
             </div>
 
-            {modo === 'login' && (
+            {modo !== 'recuperar' && (
               <div>
                 <label className="block text-xs font-medium uppercase tracking-wider text-mute mb-1.5">
                   Contraseña
@@ -97,7 +165,7 @@ export default function Login() {
                   type="password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  autoComplete="current-password"
+                  autoComplete={modo === 'registro' ? 'new-password' : 'current-password'}
                   placeholder="••••••••"
                   className="w-full px-3 py-2.5 bg-white border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300 focus:border-oso-400"
                 />
@@ -120,23 +188,34 @@ export default function Login() {
               disabled={cargando}
               className="w-full bg-oso-600 text-white py-2.5 rounded-lg font-medium hover:bg-oso-700 disabled:opacity-50 transition-colors"
             >
-              {cargando
-                ? 'Un momento…'
-                : modo === 'login' ? 'Entrar' : 'Enviar enlace de recuperación'}
+              {textoBoton}
             </button>
           </form>
 
-          <div className="mt-4 text-center">
-            {modo === 'login' ? (
+          <div className="mt-4 text-center space-y-2">
+            {modo === 'login' && (
+              <>
+                <div>
+                  <button
+                    onClick={() => { setModo('registro'); limpiar() }}
+                    className="text-sm text-oso-600 hover:underline font-medium"
+                  >
+                    Crear una cuenta nueva
+                  </button>
+                </div>
+                <div>
+                  <button
+                    onClick={() => { setModo('recuperar'); limpiar() }}
+                    className="text-sm text-mute hover:text-ink transition-colors"
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                </div>
+              </>
+            )}
+            {modo !== 'login' && (
               <button
-                onClick={() => { setModo('recuperar'); setError(''); setAviso('') }}
-                className="text-sm text-mute hover:text-ink transition-colors"
-              >
-                ¿Olvidaste tu contraseña?
-              </button>
-            ) : (
-              <button
-                onClick={() => { setModo('login'); setError(''); setAviso('') }}
+                onClick={() => { setModo('login'); limpiar() }}
                 className="text-sm text-mute hover:text-ink transition-colors"
               >
                 ← Volver al inicio de sesión
@@ -145,9 +224,11 @@ export default function Login() {
           </div>
         </div>
 
-        <p className="text-center text-xs text-mute mt-6">
-          ¿No tienes cuenta? Pídele acceso al administrador.
-        </p>
+        {modo === 'registro' && (
+          <p className="text-center text-xs text-mute mt-6">
+            Tu cuenta se crea como empleado. El dueño puede darte más permisos después.
+          </p>
+        )}
       </div>
     </div>
   )
