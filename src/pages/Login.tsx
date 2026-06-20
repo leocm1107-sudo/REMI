@@ -1,84 +1,152 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-type Estado = 'idle' | 'enviando' | 'enviado' | 'error'
+type Modo = 'login' | 'recuperar'
 
 export default function Login() {
-  const [email, setEmail] = useState('')
-  const [estado, setEstado] = useState<Estado>('idle')
-  const [errMsg, setErrMsg] = useState('')
+  const [modo, setModo]         = useState<Modo>('login')
+  const [email, setEmail]       = useState('')
+  const [password, setPassword] = useState('')
+  const [cargando, setCargando] = useState(false)
+  const [error, setError]       = useState('')
+  const [aviso, setAviso]       = useState('')
 
-  async function enviarMagicLink(e: React.FormEvent) {
-    e.preventDefault()
-    setEstado('enviando')
-    setErrMsg('')
-    const { error } = await supabase.auth.signInWithOtp({
+  async function iniciarSesion() {
+    setError('')
+    setAviso('')
+    if (!email.trim() || !password) {
+      setError('Escribe tu correo y contraseña')
+      return
+    }
+    setCargando(true)
+    const { error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
-      options: { emailRedirectTo: window.location.origin }
+      password
     })
+    setCargando(false)
     if (error) {
-      setEstado('error')
-      setErrMsg(error.message)
+      // Mensajes más claros para los casos comunes
+      if (error.message.toLowerCase().includes('invalid login')) {
+        setError('Correo o contraseña incorrectos')
+      } else if (error.message.toLowerCase().includes('email not confirmed')) {
+        setError('Tu cuenta no está confirmada. Pídele al administrador que la active.')
+      } else {
+        setError(error.message)
+      }
+    }
+    // Si entra bien, el onAuthStateChange del App detecta la sesión solo
+  }
+
+  async function recuperarContrasena() {
+    setError('')
+    setAviso('')
+    if (!email.trim()) {
+      setError('Escribe tu correo para enviarte el enlace de recuperación')
+      return
+    }
+    setCargando(true)
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin + '/restablecer'
+    })
+    setCargando(false)
+    if (error) {
+      setError(error.message)
     } else {
-      setEstado('enviado')
+      setAviso('Te enviamos un correo con el enlace para restablecer tu contraseña. Revisa tu bandeja.')
     }
   }
 
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (modo === 'login') iniciarSesion()
+    else recuperarContrasena()
+  }
+
   return (
-    <div className="min-h-screen grid place-items-center bg-canvas px-6">
+    <div className="min-h-screen grid place-items-center bg-canvas px-4">
       <div className="w-full max-w-sm">
-        <div className="flex items-center gap-2.5 mb-10 justify-center">
-          <span className="text-2xl">🐻</span>
-          <span className="font-display font-semibold text-xl tracking-tight">Don Oso · Panel</span>
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="text-4xl mb-2">🐻</div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Don Oso</h1>
+          <p className="text-mute text-sm mt-1">Panel de administración</p>
         </div>
 
-        <div className="bg-surface border border-line rounded-xl p-7">
-          <h1 className="font-display text-2xl font-semibold mb-1.5 tracking-tight">
-            Entra al panel
-          </h1>
-          <p className="text-mute text-sm mb-6">
-            Te enviamos un enlace al correo. Sin contraseñas.
-          </p>
-
-          {estado === 'enviado' ? (
-            <div className="text-sm bg-oso-50 border border-oso-200 text-oso-800 rounded-lg p-4">
-              <div className="font-medium mb-1">Revisa tu correo</div>
-              Te llegó un enlace a <strong>{email}</strong>. Ábrelo desde el mismo dispositivo.
+        <div className="bg-surface border border-line rounded-2xl p-6 shadow-sm">
+          <form onSubmit={onSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wider text-mute mb-1.5">
+                Correo
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                autoComplete="email"
+                placeholder="tucorreo@ejemplo.com"
+                className="w-full px-3 py-2.5 bg-white border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300 focus:border-oso-400"
+              />
             </div>
-          ) : (
-            <form onSubmit={enviarMagicLink} className="space-y-4">
+
+            {modo === 'login' && (
               <div>
-                <label className="block text-sm font-medium mb-1.5">Correo</label>
+                <label className="block text-xs font-medium uppercase tracking-wider text-mute mb-1.5">
+                  Contraseña
+                </label>
                 <input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  required
-                  autoFocus
-                  className="w-full px-3 py-2.5 border border-line rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-oso-300 focus:border-oso-400 transition-colors"
-                  placeholder="tu@correo.com"
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  placeholder="••••••••"
+                  className="w-full px-3 py-2.5 bg-white border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300 focus:border-oso-400"
                 />
               </div>
+            )}
 
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm">
+                {error}
+              </div>
+            )}
+            {aviso && (
+              <div className="bg-green-50 border border-green-200 text-green-800 rounded-lg p-3 text-sm">
+                {aviso}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={cargando}
+              className="w-full bg-oso-600 text-white py-2.5 rounded-lg font-medium hover:bg-oso-700 disabled:opacity-50 transition-colors"
+            >
+              {cargando
+                ? 'Un momento…'
+                : modo === 'login' ? 'Entrar' : 'Enviar enlace de recuperación'}
+            </button>
+          </form>
+
+          <div className="mt-4 text-center">
+            {modo === 'login' ? (
               <button
-                type="submit"
-                disabled={estado === 'enviando' || !email}
-                className="w-full bg-oso-600 text-white py-2.5 rounded-lg font-medium text-sm hover:bg-oso-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                onClick={() => { setModo('recuperar'); setError(''); setAviso('') }}
+                className="text-sm text-mute hover:text-ink transition-colors"
               >
-                {estado === 'enviando' ? 'Enviando…' : 'Enviar enlace'}
+                ¿Olvidaste tu contraseña?
               </button>
-
-              {errMsg && (
-                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">
-                  {errMsg}
-                </div>
-              )}
-            </form>
-          )}
+            ) : (
+              <button
+                onClick={() => { setModo('login'); setError(''); setAviso('') }}
+                className="text-sm text-mute hover:text-ink transition-colors"
+              >
+                ← Volver al inicio de sesión
+              </button>
+            )}
+          </div>
         </div>
 
         <p className="text-center text-xs text-mute mt-6">
-          Si es tu primera vez, pide al dueño que te invite.
+          ¿No tienes cuenta? Pídele acceso al administrador.
         </p>
       </div>
     </div>

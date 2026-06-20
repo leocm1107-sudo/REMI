@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import Login from './pages/Login'
+import Restablecer from './pages/Restablecer'
 import Pedidos from './pages/Pedidos'
 import Menu from './pages/Menu'
 import Logistica from './pages/Logistica'
@@ -11,23 +12,44 @@ import Layout from './components/Layout'
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [recuperando, setRecuperando] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
       setLoading(false)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s)
+      // Cuando el usuario llega desde el enlace de recuperación
+      if (event === 'PASSWORD_RECOVERY') {
+        setRecuperando(true)
+      }
     })
     return () => subscription.unsubscribe()
   }, [])
+
+  // Detectar si la URL es la de restablecer (por si recarga la página ahí)
+  const enRutaRestablecer =
+    typeof window !== 'undefined' && window.location.pathname === '/restablecer'
 
   if (loading) {
     return (
       <div className="min-h-screen grid place-items-center text-mute text-sm">
         Cargando…
       </div>
+    )
+  }
+
+  // Pantalla de restablecer: cuando viene del correo de recuperación
+  if (recuperando || enRutaRestablecer) {
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="/restablecer" element={<Restablecer />} />
+          <Route path="*" element={<Restablecer />} />
+        </Routes>
+      </BrowserRouter>
     )
   }
 
