@@ -40,6 +40,7 @@ export default function Layout({ session }: { session: Session }) {
               <NavTab to="/logistica">Logística</NavTab>
               {esDueno && <NavTab to="/clientes">Clientes</NavTab>}
               {esDueno && <NavTab to="/usuarios">Usuarios</NavTab>}
+              {esDueno && <NavTab to="/configuracion">Configuración</NavTab>}
             </nav>
           </div>
           <div className="flex items-center gap-4 text-sm">
