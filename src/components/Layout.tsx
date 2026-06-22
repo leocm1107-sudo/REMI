@@ -38,6 +38,7 @@ export default function Layout({ session }: { session: Session }) {
               <NavTab to="/" end>Pedidos</NavTab>
               <NavTab to="/menu">Menú</NavTab>
               <NavTab to="/logistica">Logística</NavTab>
+              {esDueno && <NavTab to="/clientes">Clientes</NavTab>}
               {esDueno && <NavTab to="/usuarios">Usuarios</NavTab>}
             </nav>
           </div>
