@@ -15,6 +15,7 @@ const SECCIONES = [
   { to: '/menu',          label: 'Menú',          end: false, soloDueno: false },
   { to: '/logistica',     label: 'Logística',     end: false, soloDueno: false },
   { to: '/clientes',      label: 'Clientes',      end: false, soloDueno: true },
+  { to: '/estadisticas',  label: 'Estadísticas',  end: false, soloDueno: true },
   { to: '/usuarios',      label: 'Usuarios',      end: false, soloDueno: true },
   { to: '/configuracion', label: 'Configuración', end: false, soloDueno: true }
 ]
@@ -38,10 +39,8 @@ export default function Layout({ session }: { session: Session }) {
       })
   }, [session.user.id])
 
-  // Cerrar menú al cambiar de ruta
   useEffect(() => { setMenuAbierto(false) }, [location.pathname])
 
-  // Cerrar menú al hacer clic afuera
   useEffect(() => {
     function onClick(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -56,7 +55,6 @@ export default function Layout({ session }: { session: Session }) {
     await supabase.auth.signOut()
   }
 
-  // ───────── PORTERO DE ACCESO ─────────
   if (cargando) {
     return (
       <div className="min-h-screen grid place-items-center text-mute text-sm">
@@ -66,15 +64,9 @@ export default function Layout({ session }: { session: Session }) {
   }
 
   const estado = perfil?.estado_acceso ?? 'pendiente'
+  if (estado === 'pendiente') return <PantallaEspera onSalir={cerrarSesion} tipo="pendiente" />
+  if (estado === 'rechazado') return <PantallaEspera onSalir={cerrarSesion} tipo="rechazado" />
 
-  if (estado === 'pendiente') {
-    return <PantallaEspera onSalir={cerrarSesion} tipo="pendiente" />
-  }
-  if (estado === 'rechazado') {
-    return <PantallaEspera onSalir={cerrarSesion} tipo="rechazado" />
-  }
-
-  // ───────── PANEL NORMAL (aprobado) ─────────
   const esDueno = perfil?.rol === 'dueno'
   const visibles = SECCIONES.filter(s => !s.soloDueno || esDueno)
 
@@ -83,7 +75,6 @@ export default function Layout({ session }: { session: Session }) {
       <header className="bg-surface/80 backdrop-blur border-b border-line sticky top-0 z-20">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            {/* Botón hamburguesa */}
             <div className="relative" ref={menuRef}>
               <button
                 onClick={() => setMenuAbierto(v => !v)}
@@ -104,9 +95,7 @@ export default function Layout({ session }: { session: Session }) {
                       end={s.end}
                       className={({ isActive }) => cn(
                         "block px-4 py-2.5 text-sm font-medium transition-colors",
-                        isActive
-                          ? "bg-oso-100 text-oso-800"
-                          : "text-ink hover:bg-canvas"
+                        isActive ? "bg-oso-100 text-oso-800" : "text-ink hover:bg-canvas"
                       )}
                     >
                       {s.label}
@@ -155,10 +144,7 @@ function PantallaEspera({ onSalir, tipo }: { onSalir: () => void; tipo: 'pendien
             ? 'Tu cuenta fue creada y está esperando que el dueño la apruebe. Cuando te den acceso, podrás entrar con tu correo y contraseña.'
             : 'El dueño no autorizó el acceso de esta cuenta al panel. Si crees que es un error, contáctalo.'}
         </p>
-        <button
-          onClick={onSalir}
-          className="text-sm text-mute hover:text-ink transition-colors"
-        >
+        <button onClick={onSalir} className="text-sm text-mute hover:text-ink transition-colors">
           ← Cerrar sesión
         </button>
       </div>
