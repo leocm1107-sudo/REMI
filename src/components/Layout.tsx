@@ -11,13 +11,15 @@ type Perfil = {
 }
 
 const SECCIONES = [
-  { to: '/',              label: 'Pedidos',       end: true,  soloDueno: false },
-  { to: '/menu',          label: 'Menú',          end: false, soloDueno: false },
-  { to: '/logistica',     label: 'Logística',     end: false, soloDueno: false },
-  { to: '/clientes',      label: 'Clientes',      end: false, soloDueno: true },
-  { to: '/estadisticas',  label: 'Estadísticas',  end: false, soloDueno: true },
-  { to: '/usuarios',      label: 'Usuarios',      end: false, soloDueno: true },
-  { to: '/configuracion', label: 'Configuración', end: false, soloDueno: true }
+  { to: '/',              label: 'Pedidos',           end: true,  soloDueno: false },
+  { to: '/menu',          label: 'Menú',              end: false, soloDueno: false },
+  { to: '/importar',      label: 'Importar menú',     end: false, soloDueno: true },
+  { to: '/logistica',     label: 'Logística',         end: false, soloDueno: false },
+  { to: '/zonas',         label: 'Zonas de domicilio', end: false, soloDueno: true },
+  { to: '/clientes',      label: 'Clientes',          end: false, soloDueno: true },
+  { to: '/estadisticas',  label: 'Estadísticas',      end: false, soloDueno: true },
+  { to: '/usuarios',      label: 'Usuarios',          end: false, soloDueno: true },
+  { to: '/configuracion', label: 'Configuración',     end: false, soloDueno: true }
 ]
 
 export default function Layout({ session }: { session: Session }) {
@@ -87,7 +89,7 @@ export default function Layout({ session }: { session: Session }) {
               </button>
 
               {menuAbierto && (
-                <div className="absolute left-0 top-full mt-2 w-52 bg-surface border border-line rounded-xl shadow-lg overflow-hidden animate-fade z-30">
+                <div className="absolute left-0 top-full mt-2 w-56 bg-surface border border-line rounded-xl shadow-lg overflow-hidden animate-fade z-30">
                   {visibles.map(s => (
                     <NavLink
                       key={s.to}

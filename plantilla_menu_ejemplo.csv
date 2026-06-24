@@ -1,0 +1,6 @@
+categoria,nombre,descripcion,precio,tipo,disponible,foto_url,keywords,ingredientes
+Hamburguesas,Hamburguesa Clásica,Carne de res con queso y vegetales,18000,comida,si,,hamburguesa clasica res,"carne,queso,lechuga,tomate"
+Hamburguesas,Hamburguesa Doble,Doble carne y doble queso,25000,comida,si,,hamburguesa doble,"carne,carne,queso,queso,lechuga"
+Bebidas,Gaseosa Personal,Botella 400ml,4000,bebida,si,,gaseosa refresco,
+Bebidas,Jugo Natural,Jugo de fruta natural,6000,bebida,si,,jugo natural fruta,"fruta,agua,azucar"
+Adicionales,Papas Fritas,Porción de papas a la francesa,8000,acompanamiento,si,,papas fritas,"papa,sal"

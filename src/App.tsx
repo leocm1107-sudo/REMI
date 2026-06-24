@@ -6,7 +6,9 @@ import Login from './pages/Login'
 import Restablecer from './pages/Restablecer'
 import Pedidos from './pages/Pedidos'
 import Menu from './pages/Menu'
+import ImportarMenu from './pages/ImportarMenu'
 import Logistica from './pages/Logistica'
+import ZonasDomicilio from './pages/ZonasDomicilio'
 import Clientes from './pages/Clientes'
 import Estadisticas from './pages/Estadisticas'
 import Usuarios from './pages/Usuarios'
@@ -62,7 +64,9 @@ export default function App() {
         <Route element={<Layout session={session} />}>
           <Route index element={<Pedidos session={session} />} />
           <Route path="menu" element={<Menu session={session} />} />
+          <Route path="importar" element={<ImportarMenu session={session} />} />
           <Route path="logistica" element={<Logistica session={session} />} />
+          <Route path="zonas" element={<ZonasDomicilio session={session} />} />
           <Route path="clientes" element={<Clientes session={session} />} />
           <Route path="estadisticas" element={<Estadisticas session={session} />} />
           <Route path="usuarios" element={<Usuarios session={session} />} />
