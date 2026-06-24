@@ -32,8 +32,8 @@ type Precio = {
   precio_operacion: number
 }
 
-const usd = (n: number) => `$${n.toFixed(4)}`
-const usdCorto = (n: number) => `$${n.toFixed(2)}`
+const usd = (n: number | null | undefined) => `$${(Number(n) || 0).toFixed(4)}`
+const usdCorto = (n: number | null | undefined) => `$${(Number(n) || 0).toFixed(2)}`
 
 export default function Estadisticas({ session: _s }: { session: Session }) {
   const [dias, setDias]         = useState(30)
@@ -118,7 +118,7 @@ export default function Estadisticas({ session: _s }: { session: Session }) {
   }
 
   const r = resumen!
-  const chartData = r.por_dia.map(d => ({
+  const chartData = (r.por_dia ?? []).map(d => ({
     dia: new Date(d.dia).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }),
     costo: d.costo
   }))
