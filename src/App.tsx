@@ -9,7 +9,6 @@ import Menu from './pages/Menu'
 import ImportarMenu from './pages/ImportarMenu'
 import Logistica from './pages/Logistica'
 import ZonasDomicilio from './pages/ZonasDomicilio'
-import Horarios from './pages/Horarios'
 import Clientes from './pages/Clientes'
 import Estadisticas from './pages/Estadisticas'
 import Usuarios from './pages/Usuarios'
@@ -68,7 +67,6 @@ export default function App() {
           <Route path="importar" element={<ImportarMenu session={session} />} />
           <Route path="logistica" element={<Logistica session={session} />} />
           <Route path="zonas" element={<ZonasDomicilio session={session} />} />
-          <Route path="horarios" element={<Horarios session={session} />} />
           <Route path="clientes" element={<Clientes session={session} />} />
           <Route path="estadisticas" element={<Estadisticas session={session} />} />
           <Route path="usuarios" element={<Usuarios session={session} />} />

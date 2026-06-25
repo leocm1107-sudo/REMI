@@ -33,6 +33,21 @@ type ConfigRestaurante = {
   rango_domicilio_activo: number | null
 }
 
+// Horario por día
+type DiaHorario = {
+  dia_semana: number
+  hora_apertura: string
+  hora_cierre: string
+  cerrado: boolean
+}
+
+// dia_semana: 0=domingo..6=sábado. Mostramos en orden Lun..Dom.
+const DIAS_ORDEN = [1, 2, 3, 4, 5, 6, 0]
+const DIA_LABEL: Record<number, string> = {
+  0: 'Domingo', 1: 'Lunes', 2: 'Martes', 3: 'Miércoles',
+  4: 'Jueves', 5: 'Viernes', 6: 'Sábado'
+}
+
 const PRE_INFO: Record<string, { label: string; chip: string }> = {
   pendiente_confirmacion: { label: 'Pendiente',  chip: 'bg-amber-100 text-amber-800 ring-amber-200' },
   confirmado:             { label: 'Confirmado', chip: 'bg-green-100 text-green-800 ring-green-200' },
@@ -48,8 +63,7 @@ export default function Logistica({ session }: { session: Session }) {
   const [cola, setCola]         = useState<ColaItem[]>([])
   const [rangos, setRangos]     = useState<RangoTiempo[]>([])
   const [config, setConfig]     = useState<ConfigRestaurante | null>(null)
-  const [apertura, setApertura] = useState('')
-  const [cierre, setCierre]     = useState('')
+  const [dias, setDias]         = useState<Record<number, DiaHorario>>({})
   const [guardandoHorario, setGuardandoHorario] = useState(false)
   const [horarioGuardado, setHorarioGuardado]   = useState(false)
   const [cargando, setCargando] = useState(true)
@@ -76,15 +90,23 @@ export default function Logistica({ session }: { session: Session }) {
           supabase.from('restaurantes')
             .select('id, minutos_antes_preguntar, minutos_antes_jefe, modo_notificacion, rango_cocina_activo, rango_domicilio_activo')
             .eq('id', rid).single(),
-          supabase.rpc('obtener_horario_unificado', { p_restaurante_id: rid })
+          supabase.rpc('obtener_horarios_dia')
         ])
         if (!activo) return
         if (cola.data)   setCola(cola.data as ColaItem[])
         if (rangos.data) setRangos(rangos.data as RangoTiempo[])
         if (cfg.data)    setConfig(cfg.data as ConfigRestaurante)
-        if (horario.data) {
-          setApertura((horario.data as any).apertura ?? '')
-          setCierre((horario.data as any).cierre ?? '')
+        if (horario.data && (horario.data as any).dias) {
+          const map: Record<number, DiaHorario> = {}
+          ;((horario.data as any).dias as DiaHorario[]).forEach(d => {
+            map[d.dia_semana] = {
+              dia_semana: d.dia_semana,
+              hora_apertura: d.hora_apertura ?? '17:00',
+              hora_cierre: d.hora_cierre ?? '23:00',
+              cerrado: d.cerrado
+            }
+          })
+          setDias(map)
         }
       }
       setCargando(false)
@@ -133,15 +155,57 @@ export default function Logistica({ session }: { session: Session }) {
     if (error) alert('No se pudo cambiar el rango: ' + error.message)
   }
 
+  // ── Horario por día ──
+  function toggleCerrado(dia: number) {
+    setDias(prev => ({
+      ...prev,
+      [dia]: { ...prev[dia], cerrado: !prev[dia].cerrado }
+    }))
+  }
+  function cambiarHora(dia: number, campo: 'hora_apertura' | 'hora_cierre', valor: string) {
+    setDias(prev => ({
+      ...prev,
+      [dia]: { ...prev[dia], [campo]: valor }
+    }))
+  }
+  function copiarATodos(dia: number) {
+    const origen = dias[dia]
+    setDias(prev => {
+      const nuevo = { ...prev }
+      DIAS_ORDEN.forEach(d => {
+        if (!nuevo[d].cerrado) {
+          nuevo[d] = { ...nuevo[d], hora_apertura: origen.hora_apertura, hora_cierre: origen.hora_cierre }
+        }
+      })
+      return nuevo
+    })
+  }
+
   async function guardarHorario() {
-    if (!restauranteId || !apertura || !cierre) return
+    if (!restauranteId) return
+    // Validar
+    for (const d of DIAS_ORDEN) {
+      const dia = dias[d]
+      if (!dia.cerrado) {
+        if (!dia.hora_apertura || !dia.hora_cierre) {
+          alert(`Falta la hora en ${DIA_LABEL[d]}`)
+          return
+        }
+        if (dia.hora_cierre <= dia.hora_apertura) {
+          alert(`En ${DIA_LABEL[d]}, la hora de cierre debe ser mayor a la de apertura`)
+          return
+        }
+      }
+    }
     setGuardandoHorario(true)
     setHorarioGuardado(false)
-    const { error } = await supabase.rpc('actualizar_horario_unificado', {
-      p_restaurante_id: restauranteId,
-      p_apertura: apertura,
-      p_cierre: cierre
-    })
+    const payload = DIAS_ORDEN.map(d => ({
+      dia_semana: d,
+      hora_apertura: dias[d].hora_apertura,
+      hora_cierre: dias[d].hora_cierre,
+      cerrado: dias[d].cerrado
+    }))
+    const { error } = await supabase.rpc('guardar_horarios_dia', { p_dias: payload })
     setGuardandoHorario(false)
     if (error) {
       alert('No se pudo guardar el horario: ' + error.message)
@@ -175,8 +239,6 @@ export default function Logistica({ session }: { session: Session }) {
   if (cargando) {
     return <div className="text-center text-mute py-20 text-sm">Cargando logística…</div>
   }
-
-  const horarioCambio = apertura && cierre
 
   return (
     <>
@@ -287,33 +349,86 @@ export default function Logistica({ session }: { session: Session }) {
           <h2 className="font-display text-lg font-semibold tracking-tight mb-3">Configuración</h2>
           <div className="bg-surface border border-line rounded-xl p-5 space-y-5">
 
-            {/* Horario (apertura + cierre, mismo para todos los días) */}
+            {/* Horario por día de la semana */}
             <div>
-              <label className="block text-xs font-medium uppercase tracking-wider text-mute mb-2">
-                Horario de atención (aplica todos los días)
+              <label className="block text-xs font-medium uppercase tracking-wider text-mute mb-3">
+                Horario de atención
               </label>
-              <div className="flex items-end gap-3 flex-wrap">
-                <div>
-                  <span className="block text-[11px] text-mute mb-1">Abre</span>
-                  <input
-                    type="time"
-                    value={apertura}
-                    onChange={e => setApertura(e.target.value)}
-                    className="px-3 py-2 bg-white border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300 focus:border-oso-400"
-                  />
-                </div>
-                <div>
-                  <span className="block text-[11px] text-mute mb-1">Cierra</span>
-                  <input
-                    type="time"
-                    value={cierre}
-                    onChange={e => setCierre(e.target.value)}
-                    className="px-3 py-2 bg-white border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300 focus:border-oso-400"
-                  />
-                </div>
+              <div className="border border-line rounded-lg overflow-hidden">
+                {DIAS_ORDEN.map((d, idx) => {
+                  const dia = dias[d]
+                  if (!dia) return null
+                  return (
+                    <div
+                      key={d}
+                      className={cn(
+                        "flex items-center gap-3 px-4 py-3",
+                        idx < DIAS_ORDEN.length - 1 ? "border-b border-line" : "",
+                        dia.cerrado ? "bg-canvas/50" : ""
+                      )}
+                    >
+                      {/* Toggle */}
+                      <button
+                        onClick={() => toggleCerrado(d)}
+                        className={cn(
+                          "relative w-10 h-5.5 rounded-full transition-colors shrink-0",
+                          !dia.cerrado ? "bg-oso-600" : "bg-line"
+                        )}
+                        style={{ height: '22px', width: '40px' }}
+                        aria-label={dia.cerrado ? 'Cerrado' : 'Abierto'}
+                      >
+                        <span
+                          className={cn(
+                            "absolute top-0.5 left-0.5 bg-white rounded-full transition-transform",
+                            !dia.cerrado ? "translate-x-[18px]" : ""
+                          )}
+                          style={{ height: '18px', width: '18px' }}
+                        />
+                      </button>
+
+                      {/* Día */}
+                      <div className="w-20 shrink-0">
+                        <div className="font-medium text-sm">{DIA_LABEL[d]}</div>
+                        <div className={cn("text-[11px]", dia.cerrado ? "text-mute" : "text-oso-700")}>
+                          {dia.cerrado ? 'Cerrado' : 'Abierto'}
+                        </div>
+                      </div>
+
+                      {/* Horas */}
+                      {!dia.cerrado ? (
+                        <div className="flex items-center gap-2 flex-1 flex-wrap">
+                          <input
+                            type="time"
+                            value={dia.hora_apertura}
+                            onChange={e => cambiarHora(d, 'hora_apertura', e.target.value)}
+                            className="px-2 py-1.5 bg-white border border-line rounded-lg text-sm tnum focus:outline-none focus:ring-2 focus:ring-oso-300"
+                          />
+                          <span className="text-mute text-sm">a</span>
+                          <input
+                            type="time"
+                            value={dia.hora_cierre}
+                            onChange={e => cambiarHora(d, 'hora_cierre', e.target.value)}
+                            className="px-2 py-1.5 bg-white border border-line rounded-lg text-sm tnum focus:outline-none focus:ring-2 focus:ring-oso-300"
+                          />
+                          <button
+                            onClick={() => copiarATodos(d)}
+                            className="text-[11px] text-oso-700 hover:underline ml-1"
+                            title="Aplicar a todos los días abiertos"
+                          >
+                            copiar a todos
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex-1 text-sm text-mute">Sin atención este día</div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="flex items-center gap-3 mt-3">
                 <button
                   onClick={guardarHorario}
-                  disabled={guardandoHorario || !horarioCambio}
+                  disabled={guardandoHorario}
                   className="px-4 py-2 bg-oso-600 text-white rounded-lg text-sm font-medium hover:bg-oso-700 disabled:opacity-50 transition-colors"
                 >
                   {guardandoHorario ? 'Guardando…' : 'Guardar horario'}
@@ -323,7 +438,7 @@ export default function Logistica({ session }: { session: Session }) {
                 )}
               </div>
               <p className="text-xs text-mute mt-2">
-                Este horario controla cuándo el bot toma pedidos normales vs los pone en cola.
+                Este horario controla cuándo el bot toma pedidos normales vs los pone en cola, y si avisa que está cerrado.
               </p>
             </div>
 

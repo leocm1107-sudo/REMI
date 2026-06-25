@@ -16,7 +16,6 @@ const SECCIONES = [
   { to: '/importar',      label: 'Importar menú',     end: false, soloDueno: true },
   { to: '/logistica',     label: 'Logística',         end: false, soloDueno: false },
   { to: '/zonas',         label: 'Zonas de domicilio', end: false, soloDueno: true },
-  { to: '/horarios',      label: 'Horarios',          end: false, soloDueno: true },
   { to: '/clientes',      label: 'Clientes',          end: false, soloDueno: true },
   { to: '/estadisticas',  label: 'Estadísticas',      end: false, soloDueno: true },
   { to: '/usuarios',      label: 'Usuarios',          end: false, soloDueno: true },
