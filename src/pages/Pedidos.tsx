@@ -20,31 +20,58 @@ export default function Pedidos({ session }: { session: Session }) {
   const [filtro, setFiltro]             = useState<Filtro>('activos')
   const [seleccionado, setSeleccionado] = useState<Pedido | null>(null)
   const [cargando, setCargando]         = useState(true)
+  const [restauranteId, setRestauranteId] = useState<string | null>(null)
 
+  // 1) Restaurante del usuario logueado (multi-tenant)
   useEffect(() => {
+    let activo = true
+    supabase
+      .from('usuarios_panel')
+      .select('restaurante_id')
+      .eq('user_id', session.user.id)
+      .single()
+      .then(({ data }) => {
+        if (activo && data) setRestauranteId((data as any).restaurante_id)
+        if (activo && !data) setCargando(false)
+      })
+    return () => { activo = false }
+  }, [session.user.id])
+
+  // 2) Carga inicial — SOLO pedidos de este restaurante
+  useEffect(() => {
+    if (!restauranteId) return
     let activo = true
     async function cargar() {
       const desde = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('pedidos')
         .select(PEDIDO_SELECT)
+        .eq('restaurante_id', restauranteId)
         .gte('created_at', desde)
         .order('created_at', { ascending: false })
 
       if (activo) {
+        if (error) console.error('Cargar pedidos:', error.message)
         setPedidos((data ?? []) as unknown as Pedido[])
         setCargando(false)
       }
     }
     cargar()
     return () => { activo = false }
-  }, [session.user.id])
+  }, [restauranteId])
 
+  // 3) Realtime — filtrado por restaurante
   useEffect(() => {
+    if (!restauranteId) return
     const channel = supabase
       .channel('pedidos-live')
       .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'pedidos' },
+        {
+          event: '*',
+          schema: 'public',
+          table: 'pedidos',
+          filter: `restaurante_id=eq.${restauranteId}`
+        },
         async (payload) => {
           if (payload.eventType === 'INSERT') {
             const { data } = await supabase
@@ -53,7 +80,11 @@ export default function Pedidos({ session }: { session: Session }) {
               .eq('id', (payload.new as any).id)
               .single()
             if (data) {
-              setPedidos(prev => [data as unknown as Pedido, ...prev])
+              setPedidos(prev =>
+                prev.some(p => p.id === (data as any).id)
+                  ? prev
+                  : [data as unknown as Pedido, ...prev]
+              )
             }
           } else if (payload.eventType === 'UPDATE') {
             setPedidos(prev => prev.map(p =>
@@ -71,7 +102,7 @@ export default function Pedidos({ session }: { session: Session }) {
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [])
+  }, [restauranteId])
 
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -94,53 +125,50 @@ export default function Pedidos({ session }: { session: Session }) {
     return { activos, entregadosHoy, totalHoy }
   }, [pedidos])
 
+  // Fix "Cargando items…": siempre resuelve (con error → lista vacía y aviso)
   async function abrirPedido(p: Pedido) {
     setSeleccionado(p)
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('pedido_items')
       .select('*')
       .eq('pedido_id', p.id)
-    if (data) {
-      setSeleccionado(prev => prev ? { ...prev, pedido_items: data as any } : null)
-    }
+    if (error) console.error('Cargar items:', error.message)
+    setSeleccionado(prev =>
+      prev && prev.id === p.id
+        ? { ...prev, pedido_items: (data ?? []) as any }
+        : prev
+    )
   }
 
   async function cambiarEstado(p: Pedido, nuevoEstado: EstadoPedido) {
-  const { data, error } = await supabase
-    .from('pedidos')
-    .update({ estado: nuevoEstado, updated_at: new Date().toISOString() })
-    .eq('id', p.id)
-    .select()
+    const { data, error } = await supabase
+      .from('pedidos')
+      .update({ estado: nuevoEstado, updated_at: new Date().toISOString() })
+      .eq('id', p.id)
+      .select()
 
-  console.log('Cambio de estado:', { 
-    pedido: p.numero_pedido, 
-    nuevoEstado, 
-    rowsAffected: data?.length ?? 0, 
-    error 
-  })
+    if (error) {
+      alert('Error al cambiar estado: ' + error.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      alert('El cambio no afectó ningún registro (revisa permisos/RLS).')
+      return
+    }
 
-  if (error) {
-    alert('Error al cambiar estado: ' + error.message)
-    return
+    setSeleccionado(prev => prev && prev.id === p.id ? { ...prev, estado: nuevoEstado } : prev)
   }
-  if (!data || data.length === 0) {
-    alert('El cambio no afectó ningún registro. Probablemente RLS está bloqueando.')
-    return
-  }
-
-  setSeleccionado(prev => prev && prev.id === p.id ? { ...prev, estado: nuevoEstado } : prev)
-}
 
   const filtros: { id: Filtro; label: string }[] = [
-  { id: 'activos',       label: 'Activos' },
-  { id: 'cotizado',      label: 'Cotizados' },
-  { id: 'confirmado',    label: 'Confirmados' },
-  { id: 'preparando',    label: 'En cocina' },
-  { id: 'en_camino',     label: 'En camino' },
-  { id: 'listo_recoger', label: 'Para recoger' },
-  { id: 'entregado',     label: 'Entregados' },
-  { id: 'todos',         label: 'Todos' }
-]
+    { id: 'activos',       label: 'Activos' },
+    { id: 'cotizado',      label: 'Cotizados' },
+    { id: 'confirmado',    label: 'Confirmados' },
+    { id: 'preparando',    label: 'En cocina' },
+    { id: 'en_camino',     label: 'En camino' },
+    { id: 'listo_recoger', label: 'Para recoger' },
+    { id: 'entregado',     label: 'Entregados' },
+    { id: 'todos',         label: 'Todos' }
+  ]
 
   const hoy = new Date().toLocaleDateString('es-CO', {
     weekday: 'long', day: 'numeric', month: 'long'
