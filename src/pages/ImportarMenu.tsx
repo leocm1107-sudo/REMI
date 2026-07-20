@@ -45,7 +45,9 @@ export default function ImportarMenu({ session: _s }: { session: Session }) {
   const [resultado, setResultado] = useState<string | null>(null)
   const [confirmar, setConfirmar] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-
+  const [modo, setModo] = useState<'csv' | 'ia'>('csv')
+  const [procesandoIA, setProcesandoIA] = useState(false)
+  
   function descargarPlantilla() {
     const blob = new Blob([PLANTILLA_CSV], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
@@ -120,41 +122,89 @@ export default function ImportarMenu({ session: _s }: { session: Session }) {
     if (file) procesarArchivo(file)
   }
 
+  function archivoABase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve((r.result as string).split(',')[1])
+    r.onerror = () => reject(r.error)
+    r.readAsDataURL(file)
+  })
+}
+
+async function procesarConIA(file: File) {
+  setResultado(null)
+  setConfirmar(false)
+  setErrores([])
+  setNombreArchivo(file.name)
+  setProcesandoIA(true)
+  try {
+    const file_base64 = await archivoABase64(file)
+    const { data, error } = await supabase.functions.invoke('extraer-menu-ia', {
+      body: { file_base64, mime_type: file.type }
+    })
+    if (error || data?.error) {
+      setErrores([`No se pudo leer el menú con IA: ${data?.error ?? error?.message}`])
+      setPlatos([])
+      return
+    }
+    const parseados: PlatoParseado[] = (data.platos ?? []).map((p: any) => ({
+      categoria: p.categoria ?? '',
+      nombre: p.nombre ?? '',
+      descripcion: p.descripcion ?? '',
+      precio: Number(p.precio) || 0,
+      tipo: p.tipo ?? '',
+      disponible: p.disponible !== false,
+      foto_url: '',
+      keywords: p.keywords ?? '',
+      ingredientes: Array.isArray(p.ingredientes) ? p.ingredientes : []
+    }))
+    setPlatos(parseados)
+  } finally {
+    setProcesandoIA(false)
+  }
+}
+
+function onInputChangeIA(e: React.ChangeEvent<HTMLInputElement>) {
+  const file = e.target.files?.[0]
+  if (file) procesarConIA(file)
+}
+
   async function importar() {
     setImportando(true)
     setResultado(null)
-    const payload = platos.map((p, i) => ({
-      categoria: p.categoria,
-      nombre: p.nombre,
-      descripcion: p.descripcion,
-      precio: p.precio,
-      tipo: p.tipo,
-      disponible: p.disponible,
-      foto_url: p.foto_url,
-      orden: i + 1,
-      keywords: p.keywords,
-      ingredientes: p.ingredientes
-    }))
+    try {
+      const platosParaEnviar = platos.map(p => ({
+        categoria: p.categoria,
+        nombre: p.nombre,
+        descripcion: p.descripcion,
+        precio: p.precio,
+        tipo: p.tipo,
+        disponible: p.disponible,
+        foto_url: p.foto_url || null,
+        keywords: p.keywords,
+        ingredientes: p.ingredientes
+      }))
 
-    const { data, error } = await supabase.rpc('importar_menu_completo', {
-      p_platos: payload
-    })
-    setImportando(false)
-    setConfirmar(false)
+      const { error } = await supabase.rpc('importar_menu_completo', {
+        platos: platosParaEnviar
+      })
 
-    if (error) {
-      setResultado('❌ Error: ' + error.message)
-      return
+      if (error) {
+        setResultado(`❌ No se pudo importar el menú: ${error.message}`)
+        return
+      }
+
+      setResultado(`✅ Menú importado: ${platos.length} platos.`)
+      setPlatos([])
+      setErrores([])
+      setConfirmar(false)
+      setNombreArchivo('')
+      if (inputRef.current) inputRef.current.value = ''
+    } catch (err: any) {
+      setResultado(`❌ No se pudo importar el menú: ${err?.message ?? 'error desconocido'}`)
+    } finally {
+      setImportando(false)
     }
-    if (data && (data as any).error) {
-      setResultado('❌ ' + (data as any).error)
-      return
-    }
-    const r = data as any
-    setResultado(`✅ Menú importado: ${r.categorias_creadas} categorías y ${r.platos_creados} platos.`)
-    setPlatos([])
-    setNombreArchivo('')
-    if (inputRef.current) inputRef.current.value = ''
   }
 
   // Agrupar para vista previa
@@ -191,25 +241,31 @@ export default function ImportarMenu({ session: _s }: { session: Session }) {
         </div>
       </section>
 
-      {/* Paso 2: subir */}
       <section className="bg-surface border border-line rounded-xl p-5 mb-4">
-        <div className="flex items-center gap-3 mb-2">
-          <span className="w-6 h-6 rounded-full bg-oso-100 text-oso-800 grid place-items-center text-xs font-semibold">2</span>
-          <h2 className="font-display text-lg font-semibold tracking-tight">Sube tu archivo</h2>
-        </div>
-        <div className="ml-9 mt-3">
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".csv,text/csv"
-            onChange={onInputChange}
-            className="block w-full text-sm text-mute file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border file:border-line file:bg-canvas file:text-ink file:font-medium file:cursor-pointer hover:file:border-oso-400"
-          />
-          {nombreArchivo && (
-            <p className="text-xs text-mute mt-2">Archivo: {nombreArchivo}</p>
-          )}
-        </div>
-      </section>
+  <div className="flex items-center gap-3 mb-2">
+    <span className="w-6 h-6 rounded-full bg-oso-100 text-oso-800 grid place-items-center text-xs font-semibold">2</span>
+    <h2 className="font-display text-lg font-semibold tracking-tight">Sube tu menú</h2>
+  </div>
+  <div className="ml-9 flex gap-2 mb-3">
+    <button onClick={() => setModo('csv')} className={`text-xs px-3 py-1.5 rounded-lg border ${modo === 'csv' ? 'bg-oso-600 text-white border-oso-600' : 'border-line text-mute'}`}>Archivo CSV</button>
+    <button onClick={() => setModo('ia')} className={`text-xs px-3 py-1.5 rounded-lg border ${modo === 'ia' ? 'bg-oso-600 text-white border-oso-600' : 'border-line text-mute'}`}>Foto o PDF (IA) ✨</button>
+  </div>
+  <div className="ml-9 mt-3">
+    {modo === 'csv' ? (
+      <input ref={inputRef} type="file" accept=".csv,text/csv" onChange={onInputChange}
+        className="block w-full text-sm text-mute file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border file:border-line file:bg-canvas file:text-ink file:font-medium file:cursor-pointer hover:file:border-oso-400" />
+    ) : (
+      <>
+        <input type="file" accept="image/*,application/pdf" onChange={onInputChangeIA} disabled={procesandoIA}
+          className="block w-full text-sm text-mute file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border file:border-line file:bg-canvas file:text-ink file:font-medium file:cursor-pointer hover:file:border-oso-400 disabled:opacity-50" />
+        {procesandoIA && <p className="text-xs text-mute mt-2">Leyendo el menú con IA, un momento…</p>}
+      </>
+    )}
+    {nombreArchivo && !procesandoIA && (
+      <p className="text-xs text-mute mt-2">Archivo: {nombreArchivo}</p>
+    )}
+  </div>
+</section>
 
       {/* Columnas esperadas (ayuda) */}
       <details className="bg-surface border border-line rounded-xl p-4 mb-4 text-sm">
