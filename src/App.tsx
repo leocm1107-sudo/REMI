@@ -10,7 +10,6 @@ import ImportarMenu from './pages/ImportarMenu'
 import Logistica from './pages/Logistica'
 import ZonasDomicilio from './pages/ZonasDomicilio'
 import Clientes from './pages/Clientes'
-import Estadisticas from './pages/Estadisticas'
 import Usuarios from './pages/Usuarios'
 import Configuracion from './pages/Configuracion'
 import Layout from './components/Layout'
@@ -68,7 +67,6 @@ export default function App() {
           <Route path="logistica" element={<Logistica session={session} />} />
           <Route path="zonas" element={<ZonasDomicilio session={session} />} />
           <Route path="clientes" element={<Clientes session={session} />} />
-          <Route path="estadisticas" element={<Estadisticas session={session} />} />
           <Route path="usuarios" element={<Usuarios session={session} />} />
           <Route path="configuracion" element={<Configuracion session={session} />} />
           <Route path="*" element={<Navigate to="/" replace />} />

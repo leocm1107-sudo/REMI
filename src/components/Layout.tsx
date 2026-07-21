@@ -17,7 +17,6 @@ const SECCIONES = [
   { to: '/logistica',     label: 'Logística',         end: false, soloDueno: false },
   { to: '/zonas',         label: 'Zonas de domicilio', end: false, soloDueno: true },
   { to: '/clientes',      label: 'Clientes',          end: false, soloDueno: true },
-  { to: '/estadisticas',  label: 'Estadísticas',      end: false, soloDueno: true },
   { to: '/usuarios',      label: 'Usuarios',          end: false, soloDueno: true },
   { to: '/configuracion', label: 'Configuración',     end: false, soloDueno: true }
 ]
