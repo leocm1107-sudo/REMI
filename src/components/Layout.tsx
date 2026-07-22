@@ -13,6 +13,7 @@ type Perfil = {
 
 const SECCIONES = [
   { to: '/',              label: 'Pedidos',           end: true,  soloDueno: false },
+  { to: '/nuevo-pedido',  label: 'Nuevo pedido',      end: false },
   { to: '/menu',          label: 'Menú',              end: false, soloDueno: false },
   { to: '/importar',      label: 'Importar menú',     end: false, soloDueno: true },
   { to: '/logistica',     label: 'Logística',         end: false, soloDueno: false },
