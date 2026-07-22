@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { cn } from '../lib/utils'
+import { marca as marcaInicial, type Marca } from '../lib/tema'
 
 type Perfil = {
   nombre: string | null
@@ -27,6 +28,12 @@ export default function Layout({ session }: { session: Session }) {
   const [menuAbierto, setMenuAbierto] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const location = useLocation()
+  const [marca, setMarca] = useState<Marca>(marcaInicial)
+useEffect(() => {
+  const f = () => setMarca({ ...marcaInicial })
+  window.addEventListener('marca', f)
+  return () => window.removeEventListener('marca', f)
+}, [])
 
   useEffect(() => {
     supabase
@@ -107,8 +114,10 @@ export default function Layout({ session }: { session: Session }) {
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-xl">🐻</span>
-              <span className="font-display font-semibold tracking-tight">Don Oso</span>
+              {marca.logo_url
+                ? <img src={marca.logo_url} alt="" className="h-7 w-7 rounded-full object-cover" />
+                : <span className="text-xl">{marca.logo_emoji}</span>}
+              <span className="font-display font-semibold tracking-tight">{marca.nombre}</span>
             </div>
           </div>
 

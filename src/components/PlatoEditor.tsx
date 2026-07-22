@@ -252,13 +252,30 @@ export default function PlatoEditor({ plato, categorias, onClose }: Props) {
             )}
           </Field>
 
-          <Field label="Foto (URL)">
+          <Field label="Foto del plato">
+            {form.foto_url && (
+              <img src={form.foto_url} alt="" className="h-24 w-24 rounded-lg object-cover mb-2 border border-line" />
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              className="input"
+              onChange={async e => {
+                const f = e.target.files?.[0]
+                if (!f) return
+                const ruta = `${Date.now()}_${f.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+                const { error } = await supabase.storage.from('platos').upload(ruta, f)
+                if (error) { alert('No se pudo subir la foto: ' + error.message); return }
+                const { data } = supabase.storage.from('platos').getPublicUrl(ruta)
+                setForm({ ...form, foto_url: data.publicUrl })
+              }}
+            />
             <input
               type="url"
               value={form.foto_url}
               onChange={e => setForm({ ...form, foto_url: e.target.value })}
-              className="input"
-              placeholder="https://…"
+              className="input mt-2"
+              placeholder="…o pega una URL"
             />
           </Field>
 

@@ -2,7 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: light; }
+/* ── Variables de marca (canal RGB para soportar opacidades de Tailwind) ──
+   Defaults = paleta café de Don Oso. src/lib/tema.ts las pisa en runtime
+   con los colores del restaurante del .env. */
+:root {
+  --marca-50:  250 246 241;
+  --marca-100: 242 232 220;
+  --marca-200: 229 212 186;
+  --marca-300: 210 182 140;
+  --marca-400: 168 121 79;
+  --marca-500: 138 92 54;
+  --marca-600: 107 68 35;
+  --marca-700: 85 53 25;
+  --marca-800: 63 39 18;
+  --marca-900: 42 26 12;
+  --boton:     107 68 35;   /* = marca-600 por defecto */
+
+  --canvas:  250 250 247;
+  --surface: 255 255 255;
+  --line:    232 229 221;
+  --ink:     26 26 26;
+  --mute:    107 114 128;
+
+  color-scheme: light;
+}
 
 html, body, #root { height: 100%; }
 
