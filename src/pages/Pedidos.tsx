@@ -5,6 +5,7 @@ import { cn, formatCOP, hace } from '../lib/utils'
 import { ESTADOS_INFO, type EstadoPedido, type Pedido } from '../lib/types'
 import PedidoCard from '../components/PedidoCard'
 import PedidoDetalle from '../components/PedidoDetalle'
+import NuevoPedidoModal from '../components/NuevoPedidoModal'
 
 type Filtro = 'activos' | 'todos' | EstadoPedido
 
@@ -19,6 +20,7 @@ export default function Pedidos({ session }: { session: Session }) {
   const [pedidos, setPedidos]           = useState<Pedido[]>([])
   const [filtro, setFiltro]             = useState<Filtro>('activos')
   const [seleccionado, setSeleccionado] = useState<Pedido | null>(null)
+  const [creando, setCreando] = useState(false)
   const [cargando, setCargando]         = useState(true)
   const [restauranteId, setRestauranteId] = useState<string | null>(null)
 
@@ -176,9 +178,17 @@ export default function Pedidos({ session }: { session: Session }) {
 
   return (
     <>
-      <div className="mb-7">
-        <h1 className="font-display text-4xl font-semibold tracking-tight mb-1">Pedidos</h1>
-        <p className="text-mute text-sm capitalize">{hoy}</p>
+      <div className="mb-7 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-4xl font-semibold tracking-tight mb-1">Pedidos</h1>
+          <p className="text-mute text-sm capitalize">{hoy}</p>
+        </div>
+        <button
+          onClick={() => setCreando(true)}
+          className="shrink-0 px-4 py-2 bg-oso-600 text-white rounded-lg text-sm font-medium hover:bg-oso-700 transition-colors"
+        >
+          + Nuevo pedido
+        </button>
       </div>
 
       <div className="grid grid-cols-3 gap-3 mb-8">
@@ -227,6 +237,12 @@ export default function Pedidos({ session }: { session: Session }) {
           pedido={seleccionado}
           onClose={() => setSeleccionado(null)}
           onCambiarEstado={cambiarEstado}
+        />
+      )}
+      {creando && (
+        <NuevoPedidoModal
+          onClose={() => setCreando(false)}
+          onCreado={() => setCreando(false)}
         />
       )}
     </>

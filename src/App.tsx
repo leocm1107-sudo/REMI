@@ -13,7 +13,6 @@ import Clientes from './pages/Clientes'
 import Usuarios from './pages/Usuarios'
 import Configuracion from './pages/Configuracion'
 import Layout from './components/Layout'
-import NuevoPedido from './pages/NuevoPedido'
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -64,7 +63,6 @@ export default function App() {
         <Route element={<Layout session={session} />}>
           <Route index element={<Pedidos session={session} />} />
           <Route path="menu" element={<Menu session={session} />} />
-          <Route path="nuevo-pedido" element={<NuevoPedido session={session} />} />
           <Route path="importar" element={<ImportarMenu session={session} />} />
           <Route path="logistica" element={<Logistica session={session} />} />
           <Route path="zonas" element={<ZonasDomicilio session={session} />} />
