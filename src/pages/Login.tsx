@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import PantallaMarca from '../components/PantallaMarca'
 
 type Modo = 'login' | 'registro' | 'recuperar'
 
@@ -116,15 +117,7 @@ export default function Login() {
     'Enviar enlace'
 
   return (
-    <div className="min-h-screen grid place-items-center bg-canvas px-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="text-4xl mb-2">🐻</div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">Don Oso</h1>
-          <p className="text-mute text-sm mt-1">{titulo}</p>
-        </div>
-
-        <div className="bg-surface border border-line rounded-2xl p-6 shadow-sm">
+    <PantallaMarca subtitulo={titulo}>
           <form onSubmit={onSubmit} className="space-y-4">
             {modo === 'registro' && (
               <div>
@@ -222,14 +215,12 @@ export default function Login() {
               </button>
             )}
           </div>
-        </div>
 
-        {modo === 'registro' && (
-          <p className="text-center text-xs text-mute mt-6">
-            Tu cuenta se crea como empleado. El dueño puede darte más permisos después.
-          </p>
-        )}
-      </div>
-    </div>
+          {modo === 'registro' && (
+            <p className="text-center text-xs text-mute mt-6">
+              Tu cuenta se crea como empleado. El dueño puede darte más permisos después.
+            </p>
+          )}
+    </PantallaMarca>
   )
 }

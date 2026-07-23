@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { cn } from '../lib/utils'
-import { marca as marcaInicial, type Marca } from '../lib/tema'
+import { useMarca } from '../lib/tema'
 
 type Perfil = {
   nombre: string | null
@@ -28,12 +28,8 @@ export default function Layout({ session }: { session: Session }) {
   const [menuAbierto, setMenuAbierto] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const location = useLocation()
-  const [marca, setMarca] = useState<Marca>(marcaInicial)
-useEffect(() => {
-  const f = () => setMarca({ ...marcaInicial })
-  window.addEventListener('marca', f)
-  return () => window.removeEventListener('marca', f)
-}, [])
+  const marca = useMarca()
+  
 
   useEffect(() => {
     supabase

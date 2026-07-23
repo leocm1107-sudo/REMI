@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import PantallaMarca from '../components/PantallaMarca'
 
 export default function Restablecer() {
   const [password, setPassword]   = useState('')
@@ -39,14 +40,7 @@ export default function Restablecer() {
   }
 
   return (
-    <div className="min-h-screen grid place-items-center bg-canvas px-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="text-4xl mb-2">🐻</div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">Nueva contraseña</h1>
-        </div>
-
-        <div className="bg-surface border border-line rounded-2xl p-6 shadow-sm">
+    <PantallaMarca subtitulo="Nueva contraseña">
           {sesionValida === false ? (
             <div className="text-center space-y-3">
               <p className="text-sm text-ink">
@@ -108,8 +102,6 @@ export default function Restablecer() {
               </button>
             </form>
           )}
-        </div>
-      </div>
-    </div>
+        </PantallaMarca>
   )
 }
