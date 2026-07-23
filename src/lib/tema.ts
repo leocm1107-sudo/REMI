@@ -14,7 +14,7 @@ export type Marca = {
 }
 
 // Defaults = Don Oso (coinciden con index.css)
-export let marca: Marca = { nombre: 'Don Oso', logo_emoji: '🐻', logo_url: null }
+export let marca: Marca = { nombre: 'Panel', logo_emoji: '🍽️', logo_url: null }
 
 // ── utilidades de color ──────────────────────────────────────────────
 function hexARgb(hex: string): [number, number, number] | null {
