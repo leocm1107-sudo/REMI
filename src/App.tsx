@@ -14,6 +14,7 @@ import Usuarios from './pages/Usuarios'
 import Configuracion from './pages/Configuracion'
 import Layout from './components/Layout'
 import Cronograma from './pages/Cronograma'
+import Personalizados from './pages/Personalizados'
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -63,8 +64,10 @@ export default function App() {
       <Routes>
         <Route element={<Layout session={session} />}>
           <Route index element={<Pedidos session={session} />} />
+          <Route path="personalizados" element={<Personalizados session={session} />} />
           <Route path="menu" element={<Menu session={session} />} />
           <Route path="importar" element={<ImportarMenu session={session} />} />
+          <Route path="cronograma" element={<Cronograma session={session} />} />
           <Route path="logistica" element={<Logistica session={session} />} />
           <Route path="zonas" element={<ZonasDomicilio session={session} />} />
           <Route path="clientes" element={<Clientes session={session} />} />
