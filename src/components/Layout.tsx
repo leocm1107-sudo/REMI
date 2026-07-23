@@ -19,7 +19,8 @@ const SECCIONES = [
   { to: '/zonas',         label: 'Zonas de domicilio', end: false, soloDueno: true },
   { to: '/clientes',      label: 'Clientes',          end: false, soloDueno: true },
   { to: '/usuarios',      label: 'Usuarios',          end: false, soloDueno: true },
-  { to: '/configuracion', label: 'Configuración',     end: false, soloDueno: true }
+  { to: '/configuracion', label: 'Configuración',     end: false, soloDueno: true },
+  { to: '/cronograma',    label: 'Cronograma',        end: false, soloDueno: false, feature: 'agendamiento' }
 ]
 
 export default function Layout({ session }: { session: Session }) {
@@ -72,7 +73,10 @@ export default function Layout({ session }: { session: Session }) {
   if (estado === 'rechazado') return <PantallaEspera onSalir={cerrarSesion} tipo="rechazado" />
 
   const esDueno = perfil?.rol === 'dueno'
-  const visibles = SECCIONES.filter(s => !s.soloDueno || esDueno)
+  const visibles = SECCIONES.filter(s =>
+    (!s.soloDueno || esDueno) &&
+    (!(s as any).feature || marca.features?.[(s as any).feature] === true)
+  )
 
   return (
     <div className="min-h-screen flex flex-col">

@@ -13,6 +13,7 @@ export type Marca = {
   logo_emoji: string
   logo_url: string | null
   imagen_fondo_url: string | null
+  features: Record<string, boolean>
 }
 
 // Default NEUTRO: si algo falla, no aparece la marca de otro cliente
@@ -21,6 +22,7 @@ export let marca: Marca = {
   logo_emoji: '🍽️',
   logo_url: null,
   imagen_fondo_url: null,
+  features: {},
 }
 
 // ── utilidades de color ──────────────────────────────────────────────
@@ -57,12 +59,14 @@ export function aplicarTema(r: {
   color_primario?: string | null
   color_botones?: string | null
   color_fondo?: string | null
+  features?: Record<string, boolean>
 }) {
   marca = {
     nombre: r.nombre ?? marca.nombre,
     logo_emoji: r.logo_emoji ?? marca.logo_emoji,
     logo_url: r.logo_url ?? null,
     imagen_fondo_url: r.imagen_fondo_url ?? null,
+    features: (r as any).features ?? {},
   }
 
   const primario = r.color_primario ? hexARgb(r.color_primario) : null

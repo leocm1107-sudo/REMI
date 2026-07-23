@@ -13,6 +13,7 @@ import Clientes from './pages/Clientes'
 import Usuarios from './pages/Usuarios'
 import Configuracion from './pages/Configuracion'
 import Layout from './components/Layout'
+import Cronograma from './pages/Cronograma'
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="usuarios" element={<Usuarios session={session} />} />
           <Route path="configuracion" element={<Configuracion session={session} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="cronograma" element={<Cronograma session={session} />} />
         </Route>
       </Routes>
     </BrowserRouter>
