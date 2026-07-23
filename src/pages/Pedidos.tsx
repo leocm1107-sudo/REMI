@@ -6,6 +6,7 @@ import { ESTADOS_INFO, type EstadoPedido, type Pedido } from '../lib/types'
 import PedidoCard from '../components/PedidoCard'
 import PedidoDetalle from '../components/PedidoDetalle'
 import NuevoPedidoModal from '../components/NuevoPedidoModal'
+import { useMarca } from '../lib/tema'
 
 type Filtro = 'activos' | 'todos' | EstadoPedido
 
@@ -23,7 +24,7 @@ export default function Pedidos({ session }: { session: Session }) {
   const [creando, setCreando] = useState(false)
   const [cargando, setCargando]         = useState(true)
   const [restauranteId, setRestauranteId] = useState<string | null>(null)
-
+  const marca = useMarca()
   // 1) Restaurante del usuario logueado (multi-tenant)
   useEffect(() => {
     let activo = true
@@ -218,7 +219,7 @@ export default function Pedidos({ session }: { session: Session }) {
         <div className="text-center text-mute py-20 text-sm">Cargando pedidos…</div>
       ) : filtrados.length === 0 ? (
         <div className="text-center py-20 bg-surface border border-dashed border-line rounded-xl">
-          <div className="text-3xl mb-3">🍔</div>
+          <div className="text-3xl mb-3">{marca.logo_emoji}</div>
           <p className="text-ink font-medium">No hay pedidos aquí.</p>
           <p className="text-xs text-mute mt-1">
             Cuando entren por WhatsApp aparecerán solos.

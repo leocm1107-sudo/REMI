@@ -87,6 +87,12 @@ export function aplicarTema(r: {
     }
   }
 
+  // Favicon según la marca: logo real si hay, si no el emoji
+  const icono = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+  if (icono) {
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>${marca.logo_emoji}</text></svg>`
+    icono.href = marca.logo_url ?? `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+  }
   document.title = `${marca.nombre} · Panel`
   window.dispatchEvent(new CustomEvent('marca'))
 }
