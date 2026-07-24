@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { cn, formatCOP } from '../lib/utils'
 import type { PerfilUsuario } from '../lib/types'
+import { useMarca } from '../lib/tema'
 
 type ColaItem = {
   id: string
@@ -68,6 +69,7 @@ export default function Logistica({ session }: { session: Session }) {
   const [horarioGuardado, setHorarioGuardado]   = useState(false)
   const [cargando, setCargando] = useState(true)
   const [restauranteId, setRestauranteId] = useState<string | null>(null)
+  const marca = useMarca()
 
   useEffect(() => {
     let activo = true
@@ -250,29 +252,30 @@ export default function Logistica({ session }: { session: Session }) {
       </div>
 
       {/* ───────── ZONA 2: Tiempos estimados ───────── */}
-      <section className="mb-8">
-        <h2 className="font-display text-lg font-semibold tracking-tight mb-3">Tiempos de espera</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <RangoGrupo
-            titulo="🍳 Cocina"
-            rangos={rangosCocina}
-            activo={config?.rango_cocina_activo ?? null}
-            editable={esDueno}
-            onSelect={(orden) => cambiarRango('cocina', orden)}
-          />
-          <RangoGrupo
-            titulo="🛵 Domicilio"
-            rangos={rangosDomicilio}
-            activo={config?.rango_domicilio_activo ?? null}
-            editable={esDueno}
-            onSelect={(orden) => cambiarRango('domicilio', orden)}
-          />
-        </div>
-        {!esDueno && (
-          <p className="text-xs text-mute mt-2">Solo el dueño puede cambiar los tiempos.</p>
-        )}
-      </section>
-
+      {!marca.features?.agendamiento && (
+        <section className="mb-8">
+          <h2 className="font-display text-lg font-semibold tracking-tight mb-3">Tiempos de espera</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <RangoGrupo
+              titulo="🍳 Cocina"
+              rangos={rangosCocina}
+              activo={config?.rango_cocina_activo ?? null}
+              editable={esDueno}
+              onSelect={(orden) => cambiarRango('cocina', orden)}
+            />
+            <RangoGrupo
+              titulo="🛵 Domicilio"
+              rangos={rangosDomicilio}
+              activo={config?.rango_domicilio_activo ?? null}
+              editable={esDueno}
+              onSelect={(orden) => cambiarRango('domicilio', orden)}
+            />
+          </div>
+          {!esDueno && (
+            <p className="text-xs text-mute mt-2">Solo el dueño puede cambiar los tiempos.</p>
+          )}
+        </section>
+      )}
       {/* ───────── ZONA 1: Cola de hoy ───────── */}
       <section className="mb-8">
         <div className="flex items-baseline justify-between mb-3">

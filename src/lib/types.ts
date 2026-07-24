@@ -33,6 +33,7 @@ export type Pedido = {
   metodo_pago: string | null
   distancia_km: number | null
   domicilio_requiere_revision: boolean
+  notas_internas: string | null
   created_at: string
   updated_at: string
   cliente_id: string
@@ -80,14 +81,19 @@ export const ESTADOS_INFO: Record<EstadoPedido, { label: string; chip: string }>
   cancelado:     { label: 'Cancelado',          chip: 'bg-red-100 text-red-800 ring-red-200' }
 }
 
-// Helper defensivo: nunca rompe la UI aunque venga un estado inesperado
-export function infoEstado(estado: string) {
-  return ESTADOS_INFO[estado as EstadoPedido] ?? {
+
+const LABEL_AGENDAMIENTO: Partial<Record<EstadoPedido, string>> = {
+  preparando: 'En preparación',
+}
+
+export function infoEstado(estado: string, agendamiento = false) {
+  const base = ESTADOS_INFO[estado as EstadoPedido] ?? {
     label: estado || 'Desconocido',
     chip: 'bg-purple-100 text-purple-800 ring-purple-200'
   }
+  const override = agendamiento ? LABEL_AGENDAMIENTO[estado as EstadoPedido] : undefined
+  return override ? { ...base, label: override } : base
 }
-
 // El siguiente estado DEPENDE del tipo de entrega.
 // Domicilio:   ... preparando -> en_camino     -> entregado
 // Recoge/mesa: ... preparando -> listo_recoger -> entregado

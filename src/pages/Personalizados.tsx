@@ -113,6 +113,21 @@ export default function Personalizados({ session }: { session: Session }) {
 
     setGuardando(true)
     const detalle = extras.elegidas.map(e => `${e.grupo}: ${e.opcion}`).join(' · ')
+    // Verificar que no haya ya una cita en esa fecha/hora
+    async function hayChoque(tipo: 'revision' | 'entrega', fecha: string, hora: string | null) {
+      if (!hora) return false
+      const { data } = await supabase.from('citas')
+        .select('id').eq('tipo', tipo).eq('fecha', fecha).eq('hora', hora)
+        .neq('estado', 'cancelada').limit(1)
+      return (data?.length ?? 0) > 0
+    }
+
+    if (fechaRev && horaRev && await hayChoque('revision', fechaRev, horaRev)) {
+      setMsg({ ok: false, texto: 'Ya hay una revisión agendada a esa hora. Elegí otra.' }); return
+    }
+    if (fechaEnt && horaEnt && await hayChoque('entrega', fechaEnt, horaEnt)) {
+      setMsg({ ok: false, texto: 'Ya hay una entrega agendada a esa hora. Elegí otra.' }); return
+    }
     const { data, error } = await supabase.rpc('crear_pedido_manual', {
       p_telefono: telefono,
       p_cliente_nombre: nombre || null,

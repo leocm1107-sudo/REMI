@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { cn, formatCOP } from '../lib/utils'
 import { infoEstado, siguienteEstado, type EstadoPedido, type Pedido } from '../lib/types'
 import { supabase } from '../lib/supabase'
+import { useMarca } from '../lib/tema'
+
 type Props = {
   pedido: Pedido
   onClose: () => void
@@ -9,10 +11,11 @@ type Props = {
 }
 
 export default function PedidoDetalle({ pedido, onClose, onCambiarEstado }: Props) {
-  const info = infoEstado(pedido.estado)
-  const siguiente = siguienteEstado(pedido.estado, pedido.tipo_entrega)
   const esRecoge = pedido.tipo_entrega === 'recoge' || pedido.tipo_entrega === 'mesa'
   const [tiempoInput, setTiempoInput] = useState('')
+  const marca = useMarca()
+  const info = infoEstado(pedido.estado, marca.features?.agendamiento)
+  const siguiente = siguienteEstado(pedido.estado, pedido.tipo_entrega)
   const [fotos, setFotos] = useState<{ url: string; notas: string | null }[]>([])
   useEffect(() => {
     supabase.from('pedido_adjuntos').select('url, notas')
@@ -207,7 +210,7 @@ async function avanzarConTiempo(p: Pedido, nuevoEstado: EstadoPedido) {
                   onClick={() => avanzarConTiempo(pedido, siguiente)}
                   className="w-full bg-oso-600 text-white py-3 rounded-lg font-medium hover:bg-oso-700 transition-colors"
                 >
-                  Marcar como {infoEstado(siguiente).label}
+                  Marcar como {infoEstado(siguiente, marca.features?.agendamiento).label}
                 </button>
               )}
               <button

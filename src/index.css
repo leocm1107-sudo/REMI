@@ -32,9 +32,9 @@ html, body, #root { height: 100%; }
 body {
   @apply bg-canvas text-ink font-sans antialiased;
   background-image:
-    radial-gradient(900px 650px at 100% 0%,   rgb(var(--marca-300) / 0.60), transparent 58%),
-    radial-gradient(800px 600px at 0% 100%,   rgb(var(--marca-400) / 0.35), transparent 62%),
-    radial-gradient(600px 400px at 50% 50%,   rgb(var(--marca-200) / 0.25), transparent 70%);
+    radial-gradient(900px 650px at 100% 0%,   rgb(var(--marca-300) / 0.28), transparent 58%),
+    radial-gradient(800px 600px at 0% 100%,   rgb(var(--marca-400) / 0.16), transparent 62%),
+    radial-gradient(600px 400px at 50% 50%,   rgb(var(--marca-200) / 0.12), transparent 70%);
   background-attachment: fixed;
   min-height: 100vh;
 }

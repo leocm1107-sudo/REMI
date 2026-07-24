@@ -13,7 +13,7 @@ type Filtro = 'activos' | 'todos' | EstadoPedido
 const PEDIDO_SELECT = `
   id, numero_pedido, estado, tipo_entrega, direccion_entrega,
   subtotal, domicilio_valor, total, metodo_pago, distancia_km,
-  domicilio_requiere_revision, created_at, updated_at, cliente_id,
+  domicilio_requiere_revision, notas_internas, created_at, updated_at, cliente_id,
   clientes!pedidos_cliente_id_fkey (telefono, nombre)
 `
 
@@ -166,7 +166,7 @@ export default function Pedidos({ session }: { session: Session }) {
     { id: 'activos',       label: 'Activos' },
     { id: 'cotizado',      label: 'Cotizados' },
     { id: 'confirmado',    label: 'Confirmados' },
-    { id: 'preparando',    label: 'En cocina' },
+    { id: 'preparando',    label: marca.features?.agendamiento ? 'En preparación' : 'En cocina' },
     { id: 'en_camino',     label: 'En camino' },
     { id: 'listo_recoger', label: 'Para recoger' },
     { id: 'entregado',     label: 'Entregados' },
