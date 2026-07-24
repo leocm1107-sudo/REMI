@@ -13,6 +13,12 @@ export default function PedidoDetalle({ pedido, onClose, onCambiarEstado }: Prop
   const siguiente = siguienteEstado(pedido.estado, pedido.tipo_entrega)
   const esRecoge = pedido.tipo_entrega === 'recoge' || pedido.tipo_entrega === 'mesa'
   const [tiempoInput, setTiempoInput] = useState('')
+  const [fotos, setFotos] = useState<{ url: string; notas: string | null }[]>([])
+  useEffect(() => {
+    supabase.from('pedido_adjuntos').select('url, notas')
+      .eq('pedido_id', pedido.id).eq('tipo', 'referencia')
+      .then(({ data }) => setFotos(data ?? []))
+  }, [pedido.id])
 
 async function avanzarConTiempo(p: Pedido, nuevoEstado: EstadoPedido) {
   // Si pasa de confirmado a preparando, fija el tiempo estimado
@@ -105,6 +111,27 @@ async function avanzarConTiempo(p: Pedido, nuevoEstado: EstadoPedido) {
               <div className="text-sm text-mute">Cargando items…</div>
             )}
           </section>
+          {(pedido as any).notas_internas && (
+            <section>
+              <Label>Detalles del encargo</Label>
+              <p className="text-sm whitespace-pre-wrap">{(pedido as any).notas_internas}</p>
+            </section>
+          )}
+
+          {fotos.length > 0 && (
+            <section>
+              <Label>Fotos de referencia</Label>
+              <div className="flex flex-wrap gap-2">
+                {fotos.map((f, i) => (
+                  <a key={i} href={f.url} target="_blank" rel="noreferrer" title={f.notas ?? ''}>
+                    <img src={f.url} alt=""
+                      className="h-24 w-24 object-cover rounded-lg border border-line hover:opacity-80 transition-opacity" />
+                  </a>
+                ))}
+              </div>
+            </section>
+          )}
+
 
           <section className="bg-canvas rounded-xl p-4 space-y-1.5 text-sm tnum">
             <div className="flex justify-between">

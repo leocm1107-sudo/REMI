@@ -39,8 +39,10 @@ export default function Personalizados({ session }: { session: Session }) {
   // Datos del cliente
   const [telefono, setTelefono] = useState('')
   const [nombre, setNombre] = useState('')
-  const [fecha, setFecha] = useState('')
-  const [hora, setHora] = useState('')
+  const [fechaRev, setFechaRev] = useState('')
+  const [horaRev, setHoraRev]   = useState('')
+  const [fechaEnt, setFechaEnt] = useState('')
+  const [horaEnt, setHoraEnt]   = useState('')
   const [tipoEntrega, setTipoEntrega] = useState<'recoger' | 'domicilio'>('recoger')
   const [direccion, setDireccion] = useState('')
 
@@ -118,7 +120,9 @@ export default function Personalizados({ session }: { session: Session }) {
       p_direccion: tipoEntrega === 'domicilio' ? direccion : null,
       p_metodo_pago: 'transferencia',
       p_domicilio_valor: 0,
-      p_notas: [`🎂 PERSONALIZADA — ${detalle}`, notas, fecha ? `Entrega: ${fecha} ${hora}` : '']
+      p_notas: [`🎂 PERSONALIZADA — ${detalle}`, notas,
+                fechaRev ? `Revisión: ${fechaRev} ${horaRev}` : '',
+                fechaEnt ? `Entrega: ${fechaEnt} ${horaEnt}` : '']
                  .filter(Boolean).join(' | '),
       p_items: [{
         plato_id: platoId,
@@ -146,9 +150,15 @@ export default function Personalizados({ session }: { session: Session }) {
       )
     }
 
+    // Doble agendamiento: revisión y entrega
+    const citas = []
+    if (fechaRev) citas.push({ restaurante_id: import.meta.env.VITE_RESTAURANTE_ID, pedido_id: data.pedido_id, tipo: 'revision', fecha: fechaRev, hora: horaRev || null, estado: 'propuesta' })
+    if (fechaEnt) citas.push({ restaurante_id: import.meta.env.VITE_RESTAURANTE_ID, pedido_id: data.pedido_id, tipo: 'entrega',  fecha: fechaEnt, hora: horaEnt || null, estado: 'propuesta' })
+    if (citas.length) await supabase.from('citas').insert(citas)
+
     setMsg({ ok: true, texto: `Pedido ${data.numero_pedido} creado · ${formatCOP(data.total)}` })
     setUnicas({}); setMultis({}); setNotas(''); setFotos([])
-    setTelefono(''); setNombre(''); setDireccion(''); setFecha(''); setHora('')
+    setTelefono(''); setNombre(''); setDireccion(''); setFechaRev(''); setHoraRev(''); setFechaEnt(''); setHoraEnt('')
   }
 
   if (cargando) return <p className="text-center text-mute py-20 text-sm">Cargando opciones…</p>
@@ -308,13 +318,23 @@ export default function Personalizados({ session }: { session: Session }) {
             <label className="text-xs text-mute">Nombre</label>
             <input className={input} value={nombre} onChange={e => setNombre(e.target.value)} />
           </div>
-          <div>
-            <label className="text-xs text-mute">Fecha de entrega</label>
-            <input type="date" className={input} value={fecha} onChange={e => setFecha(e.target.value)} />
-          </div>
-          <div>
-            <label className="text-xs text-mute">Hora</label>
-            <input className={input} value={hora} onChange={e => setHora(e.target.value)} placeholder="3:00 pm" />
+          <div className="col-span-2 grid grid-cols-2 gap-3 pt-2 border-t border-line">
+            <div>
+              <label className="text-xs text-mute">📝 Fecha de revisión</label>
+              <input type="date" className={input} value={fechaRev} onChange={e => setFechaRev(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-mute">Hora de revisión</label>
+              <input type="time" className={input} value={horaRev} onChange={e => setHoraRev(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-mute">📦 Fecha de entrega *</label>
+              <input type="date" className={input} value={fechaEnt} onChange={e => setFechaEnt(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-mute">Hora de entrega</label>
+              <input type="time" className={input} value={horaEnt} onChange={e => setHoraEnt(e.target.value)} />
+            </div>
           </div>
         </div>
         <div className="flex gap-4 text-sm">

@@ -89,6 +89,9 @@ export function aplicarTema(r: {
       set('surface', mezclar(fondo, 255, 0.6)); set('line', mezclar(fondo, 0, 0.09))
       set('ink', [26, 26, 26]); set('mute', [107, 114, 128])
     }
+    if (marca.imagen_fondo_url) {
+    document.documentElement.style.setProperty('--fondo-foto', `url(${marca.imagen_fondo_url})`)
+  }
   }
 
   // Favicon según la marca: logo real si hay, si no el emoji
