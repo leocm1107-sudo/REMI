@@ -87,6 +87,17 @@ export default function Menu({ session }: { session: Session }) {
     return mapa
   }, [platosFiltrados, categorias])
 
+  // Refresca solo la lista de platos (tras editar/crear/eliminar).
+  // Respaldo por si realtime no está habilitado para 'platos'.
+  async function recargarPlatos() {
+    const { data } = await supabase
+      .from('platos')
+      .select('*')
+      .order('orden', { ascending: true, nullsFirst: false })
+      .order('nombre')
+    if (data) setPlatos(data as Plato[])
+  }
+
   async function toggleDisponible(plato: Plato) {
     // Optimista
     setPlatos(prev => prev.map(p =>
@@ -192,7 +203,7 @@ export default function Menu({ session }: { session: Session }) {
         <PlatoEditor
           plato={editando === 'nuevo' ? null : editando}
           categorias={categorias}
-          onClose={() => setEditando(null)}
+          onClose={() => { setEditando(null); recargarPlatos() }}
           onIrASaboresDia={irASaboresDia}
         />
       )}
