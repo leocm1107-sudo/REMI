@@ -32,13 +32,42 @@ type ConfigRestaurante = {
   modo_notificacion: string | null
   rango_cocina_activo: number | null
   rango_domicilio_activo: number | null
+  metodos_pago: any | null
 }
 
-// Horario por día
+type TransferItem = { banco: string; tipo_cuenta: string; numero: string; titular: string }
+type MetodosPago = {
+  transferencia: TransferItem[]
+  nequi: { numero: string; titular: string } | null
+  efectivo: boolean
+}
+
+const METODOS_PAGO_VACIO: MetodosPago = { transferencia: [], nequi: { numero: '', titular: '' }, efectivo: false }
+
+// metodos_pago puede venir como objeto (jsonb) o string (text). Lo normalizamos siempre.
+function parseMetodosPago(v: unknown): MetodosPago {
+  let o: any = v
+  if (typeof v === 'string') { try { o = JSON.parse(v) } catch { return { ...METODOS_PAGO_VACIO } } }
+  if (!o || typeof o !== 'object') return { ...METODOS_PAGO_VACIO }
+  return {
+    transferencia: Array.isArray(o.transferencia)
+      ? o.transferencia.map((t: any) => ({
+          banco: t?.banco ?? '', tipo_cuenta: t?.tipo_cuenta ?? 'Ahorros',
+          numero: t?.numero ?? '', titular: t?.titular ?? '',
+        }))
+      : [],
+    nequi: o.nequi?.numero ? { numero: o.nequi.numero, titular: o.nequi.titular ?? '' } : { numero: '', titular: '' },
+    efectivo: !!o.efectivo,
+  }
+}
+
+// Horario por día. hora_apertura_2/hora_cierre_2 son opcionales (jornada partida, ej. Paperussa 8-12 y 2-6).
 type DiaHorario = {
   dia_semana: number
   hora_apertura: string
   hora_cierre: string
+  hora_apertura_2: string
+  hora_cierre_2: string
   cerrado: boolean
 }
 
@@ -67,6 +96,9 @@ export default function Logistica({ session }: { session: Session }) {
   const [dias, setDias]         = useState<Record<number, DiaHorario>>({})
   const [guardandoHorario, setGuardandoHorario] = useState(false)
   const [horarioGuardado, setHorarioGuardado]   = useState(false)
+  const [metodosPago, setMetodosPago]           = useState<MetodosPago>(METODOS_PAGO_VACIO)
+  const [guardandoPago, setGuardandoPago]       = useState(false)
+  const [pagoGuardado, setPagoGuardado]         = useState(false)
   const [cargando, setCargando] = useState(true)
   const [restauranteId, setRestauranteId] = useState<string | null>(null)
   const marca = useMarca()
@@ -90,14 +122,17 @@ export default function Logistica({ session }: { session: Session }) {
           supabase.from('config_tiempos').select('id, tipo, orden, etiqueta')
             .eq('restaurante_id', rid).order('tipo').order('orden'),
           supabase.from('restaurantes')
-            .select('id, minutos_antes_preguntar, minutos_antes_jefe, modo_notificacion, rango_cocina_activo, rango_domicilio_activo')
+            .select('id, minutos_antes_preguntar, minutos_antes_jefe, modo_notificacion, rango_cocina_activo, rango_domicilio_activo, metodos_pago')
             .eq('id', rid).single(),
           supabase.rpc('obtener_horarios_dia')
         ])
         if (!activo) return
         if (cola.data)   setCola(cola.data as ColaItem[])
         if (rangos.data) setRangos(rangos.data as RangoTiempo[])
-        if (cfg.data)    setConfig(cfg.data as ConfigRestaurante)
+        if (cfg.data) {
+          setConfig(cfg.data as ConfigRestaurante)
+          setMetodosPago(parseMetodosPago((cfg.data as any).metodos_pago))
+        }
         if (horario.data && (horario.data as any).dias) {
           const map: Record<number, DiaHorario> = {}
           ;((horario.data as any).dias as DiaHorario[]).forEach(d => {
@@ -105,6 +140,8 @@ export default function Logistica({ session }: { session: Session }) {
               dia_semana: d.dia_semana,
               hora_apertura: d.hora_apertura ?? '17:00',
               hora_cierre: d.hora_cierre ?? '23:00',
+              hora_apertura_2: (d as any).hora_apertura_2 ?? '',
+              hora_cierre_2: (d as any).hora_cierre_2 ?? '',
               cerrado: d.cerrado
             }
           })
@@ -164,11 +201,25 @@ export default function Logistica({ session }: { session: Session }) {
       [dia]: { ...prev[dia], cerrado: !prev[dia].cerrado }
     }))
   }
-  function cambiarHora(dia: number, campo: 'hora_apertura' | 'hora_cierre', valor: string) {
+  function cambiarHora(dia: number, campo: 'hora_apertura' | 'hora_cierre' | 'hora_apertura_2' | 'hora_cierre_2', valor: string) {
     setDias(prev => ({
       ...prev,
       [dia]: { ...prev[dia], [campo]: valor }
     }))
+  }
+  // Prende/apaga la segunda franja de un día. Al prenderla arranca con un default razonable; al apagarla la limpia.
+  function toggleSegundaFranja(dia: number) {
+    setDias(prev => {
+      const tiene = !!prev[dia].hora_apertura_2
+      return {
+        ...prev,
+        [dia]: {
+          ...prev[dia],
+          hora_apertura_2: tiene ? '' : '14:00',
+          hora_cierre_2: tiene ? '' : '18:00'
+        }
+      }
+    })
   }
   function copiarATodos(dia: number) {
     const origen = dias[dia]
@@ -176,7 +227,13 @@ export default function Logistica({ session }: { session: Session }) {
       const nuevo = { ...prev }
       DIAS_ORDEN.forEach(d => {
         if (!nuevo[d].cerrado) {
-          nuevo[d] = { ...nuevo[d], hora_apertura: origen.hora_apertura, hora_cierre: origen.hora_cierre }
+          nuevo[d] = {
+            ...nuevo[d],
+            hora_apertura: origen.hora_apertura,
+            hora_cierre: origen.hora_cierre,
+            hora_apertura_2: origen.hora_apertura_2,
+            hora_cierre_2: origen.hora_cierre_2
+          }
         }
       })
       return nuevo
@@ -197,6 +254,21 @@ export default function Logistica({ session }: { session: Session }) {
           alert(`En ${DIA_LABEL[d]}, la hora de cierre debe ser mayor a la de apertura`)
           return
         }
+        // Segunda franja (jornada partida) es opcional, pero si está activa debe ser válida y no pisar la primera.
+        if (dia.hora_apertura_2 || dia.hora_cierre_2) {
+          if (!dia.hora_apertura_2 || !dia.hora_cierre_2) {
+            alert(`Falta completar la segunda franja en ${DIA_LABEL[d]}`)
+            return
+          }
+          if (dia.hora_cierre_2 <= dia.hora_apertura_2) {
+            alert(`En ${DIA_LABEL[d]}, la segunda franja: el cierre debe ser mayor a la apertura`)
+            return
+          }
+          if (dia.hora_apertura_2 < dia.hora_cierre) {
+            alert(`En ${DIA_LABEL[d]}, la segunda franja debe empezar después de que cierra la primera`)
+            return
+          }
+        }
       }
     }
     setGuardandoHorario(true)
@@ -205,6 +277,8 @@ export default function Logistica({ session }: { session: Session }) {
       dia_semana: d,
       hora_apertura: dias[d].hora_apertura,
       hora_cierre: dias[d].hora_cierre,
+      hora_apertura_2: dias[d].hora_apertura_2,
+      hora_cierre_2: dias[d].hora_cierre_2,
       cerrado: dias[d].cerrado
     }))
     const { error } = await supabase.rpc('guardar_horarios_dia', { p_dias: payload })
@@ -236,6 +310,34 @@ export default function Logistica({ session }: { session: Session }) {
       .update(campos)
       .eq('id', restauranteId)
     if (error) alert('No se pudo guardar: ' + error.message)
+  }
+
+  // ── Métodos de pago ──
+  function addTransferencia() {
+    setMetodosPago(p => ({ ...p, transferencia: [...p.transferencia, { banco: '', tipo_cuenta: 'Ahorros', numero: '', titular: '' }] }))
+  }
+  function removeTransferencia(idx: number) {
+    setMetodosPago(p => ({ ...p, transferencia: p.transferencia.filter((_, i) => i !== idx) }))
+  }
+  function updateTransferencia(idx: number, campo: keyof TransferItem, valor: string) {
+    setMetodosPago(p => ({ ...p, transferencia: p.transferencia.map((t, i) => i === idx ? { ...t, [campo]: valor } : t) }))
+  }
+  function updateNequi(campo: 'numero' | 'titular', valor: string) {
+    setMetodosPago(p => ({ ...p, nequi: { numero: p.nequi?.numero ?? '', titular: p.nequi?.titular ?? '', [campo]: valor } }))
+  }
+  async function guardarPago() {
+    if (!restauranteId) return
+    setGuardandoPago(true); setPagoGuardado(false)
+    const limpio: MetodosPago = {
+      transferencia: metodosPago.transferencia.filter(t => t.numero.trim()),
+      nequi: metodosPago.nequi?.numero.trim() ? metodosPago.nequi : null,
+      efectivo: !!metodosPago.efectivo,
+    }
+    const { error } = await supabase.from('restaurantes').update({ metodos_pago: limpio }).eq('id', restauranteId)
+    setGuardandoPago(false)
+    if (error) { alert('No se pudo guardar los métodos de pago: ' + error.message); return }
+    setMetodosPago({ ...limpio, nequi: limpio.nequi ?? { numero: '', titular: '' } })
+    setPagoGuardado(true); setTimeout(() => setPagoGuardado(false), 2500)
   }
 
   if (cargando) {
@@ -399,27 +501,61 @@ export default function Logistica({ session }: { session: Session }) {
 
                       {/* Horas */}
                       {!dia.cerrado ? (
-                        <div className="flex items-center gap-2 flex-1 flex-wrap">
-                          <input
-                            type="time"
-                            value={dia.hora_apertura}
-                            onChange={e => cambiarHora(d, 'hora_apertura', e.target.value)}
-                            className="px-2 py-1.5 bg-white border border-line rounded-lg text-sm tnum focus:outline-none focus:ring-2 focus:ring-oso-300"
-                          />
-                          <span className="text-mute text-sm">a</span>
-                          <input
-                            type="time"
-                            value={dia.hora_cierre}
-                            onChange={e => cambiarHora(d, 'hora_cierre', e.target.value)}
-                            className="px-2 py-1.5 bg-white border border-line rounded-lg text-sm tnum focus:outline-none focus:ring-2 focus:ring-oso-300"
-                          />
-                          <button
-                            onClick={() => copiarATodos(d)}
-                            className="text-[11px] text-oso-700 hover:underline ml-1"
-                            title="Aplicar a todos los días abiertos"
-                          >
-                            copiar a todos
-                          </button>
+                        <div className="flex-1 flex flex-col gap-1.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <input
+                              type="time"
+                              value={dia.hora_apertura}
+                              onChange={e => cambiarHora(d, 'hora_apertura', e.target.value)}
+                              className="px-2 py-1.5 bg-white border border-line rounded-lg text-sm tnum focus:outline-none focus:ring-2 focus:ring-oso-300"
+                            />
+                            <span className="text-mute text-sm">a</span>
+                            <input
+                              type="time"
+                              value={dia.hora_cierre}
+                              onChange={e => cambiarHora(d, 'hora_cierre', e.target.value)}
+                              className="px-2 py-1.5 bg-white border border-line rounded-lg text-sm tnum focus:outline-none focus:ring-2 focus:ring-oso-300"
+                            />
+                            <button
+                              onClick={() => copiarATodos(d)}
+                              className="text-[11px] text-oso-700 hover:underline ml-1"
+                              title="Aplicar a todos los días abiertos"
+                            >
+                              copiar a todos
+                            </button>
+                          </div>
+
+                          {/* Segunda franja (jornada partida), opcional */}
+                          {dia.hora_apertura_2 ? (
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <input
+                                type="time"
+                                value={dia.hora_apertura_2}
+                                onChange={e => cambiarHora(d, 'hora_apertura_2', e.target.value)}
+                                className="px-2 py-1.5 bg-white border border-line rounded-lg text-sm tnum focus:outline-none focus:ring-2 focus:ring-oso-300"
+                              />
+                              <span className="text-mute text-sm">a</span>
+                              <input
+                                type="time"
+                                value={dia.hora_cierre_2}
+                                onChange={e => cambiarHora(d, 'hora_cierre_2', e.target.value)}
+                                className="px-2 py-1.5 bg-white border border-line rounded-lg text-sm tnum focus:outline-none focus:ring-2 focus:ring-oso-300"
+                              />
+                              <button
+                                onClick={() => toggleSegundaFranja(d)}
+                                className="text-[11px] text-red-700 hover:underline ml-1"
+                              >
+                                quitar franja
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => toggleSegundaFranja(d)}
+                              className="text-[11px] text-oso-700 hover:underline text-left w-fit"
+                            >
+                              + segunda franja (jornada partida)
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <div className="flex-1 text-sm text-mute">Sin atención este día</div>
@@ -493,6 +629,114 @@ export default function Logistica({ session }: { session: Session }) {
               <p className="text-xs text-mute mt-2">
                 Instantánea: cada pedido le llega al jefe al confirmarse, a cualquier hora.
                 Acumulada: los pedidos hechos fuera de horario se le mandan todos juntos un rato antes de abrir.
+              </p>
+            </div>
+
+            {/* ── Métodos de pago ── */}
+            <div className="border-t border-line pt-5">
+              <label className="block text-xs font-medium uppercase tracking-wider text-mute mb-2">
+                Métodos de pago
+              </label>
+
+              {/* Cuentas / transferencias */}
+              <div className="space-y-3">
+                {metodosPago.transferencia.map((t, idx) => (
+                  <div key={idx} className="border border-line rounded-lg p-3 bg-canvas/40 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-medium uppercase tracking-wider text-mute">Cuenta {idx + 1}</span>
+                      <button onClick={() => removeTransferencia(idx)} className="text-[11px] text-red-700 hover:underline">
+                        Quitar
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input
+                        placeholder="Banco (ej. Bancolombia)"
+                        value={t.banco}
+                        onChange={e => updateTransferencia(idx, 'banco', e.target.value)}
+                        className="px-3 py-2 bg-white border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300"
+                      />
+                      <select
+                        value={t.tipo_cuenta}
+                        onChange={e => updateTransferencia(idx, 'tipo_cuenta', e.target.value)}
+                        className="px-3 py-2 bg-white border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300"
+                      >
+                        <option>Ahorros</option>
+                        <option>Corriente</option>
+                        <option>Nequi</option>
+                        <option>Daviplata</option>
+                      </select>
+                      <input
+                        placeholder="Número de cuenta"
+                        value={t.numero}
+                        onChange={e => updateTransferencia(idx, 'numero', e.target.value)}
+                        className="px-3 py-2 bg-white border border-line rounded-lg text-sm tnum focus:outline-none focus:ring-2 focus:ring-oso-300"
+                      />
+                      <input
+                        placeholder="Titular"
+                        value={t.titular}
+                        onChange={e => updateTransferencia(idx, 'titular', e.target.value)}
+                        className="px-3 py-2 bg-white border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300"
+                      />
+                    </div>
+                  </div>
+                ))}
+                <button onClick={addTransferencia} className="text-xs font-medium text-oso-700 hover:underline">
+                  + Agregar cuenta
+                </button>
+              </div>
+
+              {/* Nequi */}
+              <div className="mt-4">
+                <div className="text-[11px] font-medium uppercase tracking-wider text-mute mb-1.5">Nequi</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input
+                    placeholder="Número Nequi"
+                    value={metodosPago.nequi?.numero ?? ''}
+                    onChange={e => updateNequi('numero', e.target.value)}
+                    className="px-3 py-2 bg-white border border-line rounded-lg text-sm tnum focus:outline-none focus:ring-2 focus:ring-oso-300"
+                  />
+                  <input
+                    placeholder="Titular"
+                    value={metodosPago.nequi?.titular ?? ''}
+                    onChange={e => updateNequi('titular', e.target.value)}
+                    className="px-3 py-2 bg-white border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300"
+                  />
+                </div>
+              </div>
+
+              {/* Efectivo */}
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  onClick={() => setMetodosPago(p => ({ ...p, efectivo: !p.efectivo }))}
+                  className={cn("relative rounded-full transition-colors shrink-0", metodosPago.efectivo ? "bg-oso-600" : "bg-line")}
+                  style={{ height: '22px', width: '40px' }}
+                  aria-label={metodosPago.efectivo ? 'Efectivo activo' : 'Efectivo inactivo'}
+                >
+                  <span
+                    className={cn("absolute top-0.5 left-0.5 bg-white rounded-full transition-transform", metodosPago.efectivo ? "translate-x-[18px]" : "")}
+                    style={{ height: '18px', width: '18px' }}
+                  />
+                </button>
+                <div>
+                  <div className="font-medium text-sm">Acepta efectivo</div>
+                  <div className="text-[11px] text-mute">
+                    {metodosPago.efectivo ? 'El bot ofrece efectivo como opción.' : 'Solo transferencia / Nequi (recomendado para pedidos por encargo).'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 mt-4">
+                <button
+                  onClick={guardarPago}
+                  disabled={guardandoPago}
+                  className="px-4 py-2 bg-oso-600 text-white rounded-lg text-sm font-medium hover:bg-oso-700 disabled:opacity-50 transition-colors"
+                >
+                  {guardandoPago ? 'Guardando…' : 'Guardar métodos de pago'}
+                </button>
+                {pagoGuardado && <span className="text-sm text-green-700 font-medium">✓ Guardado</span>}
+              </div>
+              <p className="text-xs text-mute mt-2">
+                El bot le da estos datos al cliente cuando pregunta cómo pagar, y la reserva se confirma con el comprobante.
               </p>
             </div>
           </div>

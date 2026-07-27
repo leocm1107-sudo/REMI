@@ -18,6 +18,7 @@ type FormData = {
   foto_url: string
   keywords: string
   ingredientes: string[]
+  sabores: { nombre: string; disponible: boolean }[]
 }
 
 const FORM_INICIAL: FormData = {
@@ -29,13 +30,15 @@ const FORM_INICIAL: FormData = {
   disponible: true,
   foto_url: '',
   keywords: '',
-  ingredientes: []
+  ingredientes: [],
+  sabores: []
 }
 
 export default function PlatoEditor({ plato, categorias, onClose }: Props) {
   const esNuevo = plato === null
   const [form, setForm]                       = useState<FormData>(FORM_INICIAL)
   const [nuevoIngrediente, setNuevoIngrediente] = useState('')
+  const [nuevoSabor, setNuevoSabor]           = useState('')
   const [guardando, setGuardando]             = useState(false)
   const [error, setError]                     = useState('')
 
@@ -51,7 +54,8 @@ export default function PlatoEditor({ plato, categorias, onClose }: Props) {
         disponible:   plato.disponible,
         foto_url:     plato.foto_url ?? '',
         keywords:     plato.keywords ?? '',
-        ingredientes: Array.isArray(plato.ingredientes) ? plato.ingredientes : []
+        ingredientes: Array.isArray(plato.ingredientes) ? plato.ingredientes : [],
+        sabores:      Array.isArray((plato as any).sabores) ? (plato as any).sabores : []
       })
     } else {
       setForm({ ...FORM_INICIAL, categoria_id: categorias[0]?.id ?? '' })
@@ -77,6 +81,22 @@ export default function PlatoEditor({ plato, categorias, onClose }: Props) {
     setForm(f => ({ ...f, ingredientes: f.ingredientes.filter(i => i !== ing) }))
   }
 
+  function agregarSabor() {
+    const s = nuevoSabor.trim()
+    if (!s) return
+    if (form.sabores.some(x => x.nombre.toLowerCase() === s.toLowerCase())) return
+    setForm(f => ({ ...f, sabores: [...f.sabores, { nombre: s, disponible: true }] }))
+    setNuevoSabor('')
+  }
+
+  function quitarSabor(nombre: string) {
+    setForm(f => ({ ...f, sabores: f.sabores.filter(x => x.nombre !== nombre) }))
+  }
+
+  function toggleSabor(nombre: string) {
+    setForm(f => ({ ...f, sabores: f.sabores.map(x => x.nombre === nombre ? { ...x, disponible: !x.disponible } : x) }))
+  }
+
   async function guardar() {
     setError('')
     if (!form.nombre.trim()) { setError('El nombre es obligatorio'); return }
@@ -94,6 +114,7 @@ export default function PlatoEditor({ plato, categorias, onClose }: Props) {
       foto_url:     form.foto_url.trim() || null,
       keywords:     form.keywords.trim() || null,
       ingredientes: form.ingredientes.length > 0 ? form.ingredientes : null,
+      sabores:      form.sabores,
       updated_at:   new Date().toISOString()
     }
 
@@ -249,6 +270,63 @@ export default function PlatoEditor({ plato, categorias, onClose }: Props) {
                   </span>
                 ))}
               </div>
+            )}
+          </Field>
+
+          <Field label="Sabores del día (para productos con sabores variables)">
+            <div className="flex gap-2 mb-2">
+              <input
+                type="text"
+                value={nuevoSabor}
+                onChange={e => setNuevoSabor(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    agregarSabor()
+                  }
+                }}
+                placeholder="Chocolate"
+                className="input flex-1"
+              />
+              <button
+                type="button"
+                onClick={agregarSabor}
+                className="px-3 py-2 bg-canvas border border-line rounded-lg text-sm hover:bg-oso-50 transition-colors"
+              >
+                Agregar
+              </button>
+            </div>
+            {form.sabores.length > 0 ? (
+              <div className="space-y-1.5">
+                {form.sabores.map(s => (
+                  <div key={s.nombre} className="flex items-center gap-2 bg-canvas/50 border border-line rounded-lg px-2.5 py-1.5">
+                    <button
+                      type="button"
+                      onClick={() => toggleSabor(s.nombre)}
+                      className={`relative rounded-full transition-colors shrink-0 ${s.disponible ? 'bg-oso-600' : 'bg-line'}`}
+                      style={{ height: '20px', width: '36px' }}
+                      aria-label={s.disponible ? 'Disponible hoy' : 'No disponible hoy'}
+                    >
+                      <span
+                        className="absolute top-0.5 left-0.5 bg-white rounded-full transition-transform"
+                        style={{ height: '16px', width: '16px', transform: s.disponible ? 'translateX(16px)' : 'none' }}
+                      />
+                    </button>
+                    <span className={`text-sm flex-1 ${s.disponible ? 'text-ink' : 'text-mute line-through'}`}>{s.nombre}</span>
+                    <span className="text-[11px] text-mute">{s.disponible ? 'hoy sí' : 'hoy no'}</span>
+                    <button
+                      type="button"
+                      onClick={() => quitarSabor(s.nombre)}
+                      className="text-mute hover:text-red-600 text-lg leading-none"
+                      aria-label={`Quitar ${s.nombre}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] text-mute">Déjalo vacío si este producto no maneja sabores variables. El bot solo menciona los que estén en "hoy sí".</p>
             )}
           </Field>
 
