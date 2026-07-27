@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { cn, formatCOP } from '../lib/utils'
 import type { Plato, Categoria, PerfilUsuario } from '../lib/types'
 import PlatoEditor from '../components/PlatoEditor'
+import SaboresDiaSection from '../components/SaboresDiaSection'
 
 export default function Menu({ session }: { session: Session }) {
   const [platos, setPlatos]         = useState<Plato[]>([])
@@ -13,6 +14,7 @@ export default function Menu({ session }: { session: Session }) {
   const [busqueda, setBusqueda]     = useState('')
   const [catFiltro, setCatFiltro]   = useState<string | 'todas'>('todas')
   const [editando, setEditando]     = useState<Plato | 'nuevo' | null>(null)
+  const saboresDiaRef = useRef<HTMLDivElement>(null)
 
   // Carga inicial
   useEffect(() => {
@@ -55,6 +57,13 @@ export default function Menu({ session }: { session: Session }) {
   }, [])
 
   const esDueno = perfil?.rol === 'dueno'
+  const restauranteId = categorias[0]?.restaurante_id ?? ''
+
+  function irASaboresDia() {
+    setEditando(null)
+    // Espera a que el editor cierre antes de hacer scroll
+    setTimeout(() => saboresDiaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
 
   // Filtrado y agrupación
   const platosFiltrados = useMemo(() => {
@@ -114,6 +123,10 @@ export default function Menu({ session }: { session: Session }) {
           </button>
         )}
       </div>
+
+      {!cargando && restauranteId && (
+        <SaboresDiaSection ref={saboresDiaRef} restauranteId={restauranteId} esDueno={esDueno} />
+      )}
 
       {/* Búsqueda y filtro */}
       <div className="flex gap-2 mb-6 flex-wrap">
@@ -180,6 +193,7 @@ export default function Menu({ session }: { session: Session }) {
           plato={editando === 'nuevo' ? null : editando}
           categorias={categorias}
           onClose={() => setEditando(null)}
+          onIrASaboresDia={irASaboresDia}
         />
       )}
     </>
@@ -223,6 +237,12 @@ function PlatoCard({
 
         {plato.descripcion && (
           <p className="text-xs text-mute line-clamp-2 mb-3 leading-relaxed">{plato.descripcion}</p>
+        )}
+
+        {(plato as any).usa_sabores_dia && (
+          <span className="inline-block text-[10px] px-1.5 py-0.5 bg-oso-50 text-oso-800 rounded mb-3">
+            Según sabores del día
+          </span>
         )}
 
         {ingredientes.length > 0 && (
