@@ -7,7 +7,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatCOP } from '../lib/utils'
 
-type PlatoMin = { id: string; nombre: string; precio: number; keywords: string | null }
+type Presentacion = { id: string; nombre: string; detalle: string | null; precio: number; orden: number }
+type PlatoMin = { id: string; nombre: string; precio: number; keywords: string | null; presentaciones: Presentacion[] }
 type Item = { plato_id: string | null; nombre: string; precio: number; cantidad: number; notas: string }
 
 const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-oso-300'
@@ -17,6 +18,9 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
   const [platos, setPlatos] = useState<PlatoMin[]>([])
   const [busca, setBusca] = useState('')
   const [items, setItems] = useState<Item[]>([])
+
+  // Plato para el cual se está eligiendo tamaño (null = ningún selector abierto)
+  const [platoTamanos, setPlatoTamanos] = useState<PlatoMin | null>(null)
 
   const [telefono, setTelefono] = useState('')
   const [nombre, setNombre] = useState('')
@@ -33,16 +37,29 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null)
 
   useEffect(() => {
-    supabase.from('platos').select('id, nombre, precio, keywords')
-      .eq('disponible', true).order('nombre')
-      .then(({ data }) => setPlatos((data ?? []) as PlatoMin[]))
+    async function cargar() {
+      const [{ data: platosData }, { data: presData }] = await Promise.all([
+        supabase.from('platos').select('id, nombre, precio, keywords').eq('disponible', true).order('nombre'),
+        supabase.from('presentaciones').select('id, plato_id, nombre, detalle, precio, orden').eq('disponible', true).order('orden'),
+      ])
+      const porPlato: Record<string, Presentacion[]> = {}
+      for (const pr of (presData ?? []) as any[]) {
+        (porPlato[pr.plato_id] ??= []).push({ id: pr.id, nombre: pr.nombre, detalle: pr.detalle, precio: pr.precio, orden: pr.orden })
+      }
+      setPlatos(((platosData ?? []) as any[]).map(p => ({ ...p, presentaciones: porPlato[p.id] ?? [] })) as PlatoMin[])
+    }
+    cargar()
   }, [])
 
   useEffect(() => {
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (platoTamanos) { setPlatoTamanos(null); return }
+      onClose()
+    }
     window.addEventListener('keydown', esc)
     return () => window.removeEventListener('keydown', esc)
-  }, [onClose])
+  }, [onClose, platoTamanos])
 
   const resultados = useMemo(() => {
     const q = busca.trim().toLowerCase()
@@ -70,13 +87,31 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
     }
   }
 
-  function agregar(p: PlatoMin) {
+  // Agrega (o suma cantidad a) una línea de pedido. Dedupe por plato_id + nombre,
+  // así dos tamaños distintos del mismo plato quedan como líneas separadas.
+  function agregarItem(plato_id: string | null, nombreLinea: string, precio: number) {
     setItems(prev => {
-      const i = prev.findIndex(x => x.plato_id === p.id)
+      const i = prev.findIndex(x => x.plato_id === plato_id && x.nombre === nombreLinea)
       if (i >= 0) { const c = [...prev]; c[i] = { ...c[i], cantidad: c[i].cantidad + 1 }; return c }
-      return [...prev, { plato_id: p.id, nombre: p.nombre, precio: p.precio, cantidad: 1, notas: '' }]
+      return [...prev, { plato_id, nombre: nombreLinea, precio, cantidad: 1, notas: '' }]
     })
     setBusca('')
+    setPlatoTamanos(null)
+  }
+
+  // Al tocar un resultado de búsqueda: si tiene tamaños, abre el selector;
+  // si no, agrega directo con el precio único del plato.
+  function elegir(p: PlatoMin) {
+    if (p.presentaciones.length > 0) { setPlatoTamanos(p); return }
+    agregarItem(p.id, p.nombre, p.precio)
+  }
+
+  function elegirTamano(pres: Presentacion) {
+    if (!platoTamanos) return
+    const nombreLinea = pres.detalle
+      ? `${platoTamanos.nombre} — ${pres.nombre} (${pres.detalle})`
+      : `${platoTamanos.nombre} — ${pres.nombre}`
+    agregarItem(platoTamanos.id, nombreLinea, pres.precio)
   }
 
   function agregarLibre() {
@@ -172,13 +207,41 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
           {/* Productos */}
           <div className="border-t border-line pt-4 space-y-3">
             <div className="relative">
-              <input className={inputCls} value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar plato… (mín. 2 letras)" />
-              {resultados.length > 0 && (
+              <input className={inputCls} value={busca} onChange={e => { setBusca(e.target.value); setPlatoTamanos(null) }}
+                placeholder="Buscar plato… (mín. 2 letras)" />
+              {resultados.length > 0 && !platoTamanos && (
                 <div className="absolute z-20 mt-1 w-full bg-white border border-line rounded-lg shadow-lg overflow-hidden">
-                  {resultados.map(p => (
-                    <button key={p.id} onClick={() => agregar(p)}
+                  {resultados.map(p => {
+                    const conTamanos = p.presentaciones.length > 0
+                    const precios = conTamanos ? p.presentaciones.map(pr => pr.precio) : []
+                    const min = conTamanos ? Math.min(...precios) : p.precio
+                    const max = conTamanos ? Math.max(...precios) : p.precio
+                    return (
+                      <button key={p.id} onClick={() => elegir(p)}
+                        className="w-full flex justify-between px-3 py-2 text-sm hover:bg-oso-50 text-left">
+                        <span>{p.nombre}</span>
+                        <span className="tnum text-mute">
+                          {conTamanos && min !== max ? `${formatCOP(min)}–${formatCOP(max)}` : formatCOP(min)}
+                          {conTamanos && <span className="text-oso-600 ml-1">· elegir tamaño</span>}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Selector de tamaño */}
+              {platoTamanos && (
+                <div className="absolute z-20 mt-1 w-full bg-white border border-line rounded-lg shadow-lg overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-2 bg-oso-50 border-b border-line">
+                    <span className="text-sm font-medium">Elige el tamaño — {platoTamanos.nombre}</span>
+                    <button className="text-mute hover:text-ink text-sm" onClick={() => setPlatoTamanos(null)}>✕</button>
+                  </div>
+                  {platoTamanos.presentaciones.map(pr => (
+                    <button key={pr.id} onClick={() => elegirTamano(pr)}
                       className="w-full flex justify-between px-3 py-2 text-sm hover:bg-oso-50 text-left">
-                      <span>{p.nombre}</span><span className="tnum text-mute">{formatCOP(p.precio)}</span>
+                      <span>{pr.nombre}{pr.detalle ? ` (${pr.detalle})` : ''}</span>
+                      <span className="tnum text-mute">{formatCOP(pr.precio)}</span>
                     </button>
                   ))}
                 </div>
