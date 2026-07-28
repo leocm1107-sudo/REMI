@@ -6,7 +6,6 @@ type Props = {
   plato: Plato | null     // null = crear nuevo
   categorias: Categoria[]
   onClose: () => void
-  onIrASaboresDia?: () => void   // atajo para saltar a la sección "Sabores del día"
 }
 
 type FormData = {
@@ -20,7 +19,6 @@ type FormData = {
   keywords: string
   ingredientes: string[]
   sabores: { nombre: string; disponible: boolean }[]
-  usa_sabores_dia: boolean
 }
 
 const FORM_INICIAL: FormData = {
@@ -33,11 +31,10 @@ const FORM_INICIAL: FormData = {
   foto_url: '',
   keywords: '',
   ingredientes: [],
-  sabores: [],
-  usa_sabores_dia: false
+  sabores: []
 }
 
-export default function PlatoEditor({ plato, categorias, onClose, onIrASaboresDia }: Props) {
+export default function PlatoEditor({ plato, categorias, onClose }: Props) {
   const esNuevo = plato === null
   const [form, setForm]                       = useState<FormData>(FORM_INICIAL)
   const [nuevoIngrediente, setNuevoIngrediente] = useState('')
@@ -58,8 +55,7 @@ export default function PlatoEditor({ plato, categorias, onClose, onIrASaboresDi
         foto_url:     plato.foto_url ?? '',
         keywords:     plato.keywords ?? '',
         ingredientes:    Array.isArray(plato.ingredientes) ? plato.ingredientes : [],
-        sabores:         Array.isArray((plato as any).sabores) ? (plato as any).sabores : [],
-        usa_sabores_dia: Boolean((plato as any).usa_sabores_dia)
+        sabores:         Array.isArray((plato as any).sabores) ? (plato as any).sabores : []
       })
     } else {
       setForm({ ...FORM_INICIAL, categoria_id: categorias[0]?.id ?? '' })
@@ -119,7 +115,6 @@ export default function PlatoEditor({ plato, categorias, onClose, onIrASaboresDi
       keywords:     form.keywords.trim() || null,
       ingredientes:    form.ingredientes.length > 0 ? form.ingredientes : null,
       sabores:         form.sabores,
-      usa_sabores_dia: form.usa_sabores_dia,
       updated_at:      new Date().toISOString()
     }
 
@@ -279,100 +274,59 @@ export default function PlatoEditor({ plato, categorias, onClose, onIrASaboresDi
           </Field>
 
           <Field label="Sabores">
-            <div className="flex bg-canvas border border-line rounded-lg p-1 mb-3">
+            <div className="flex gap-2 mb-2">
+              <input
+                type="text"
+                value={nuevoSabor}
+                onChange={e => setNuevoSabor(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    agregarSabor()
+                  }
+                }}
+                placeholder="Chocolate"
+                className="input flex-1"
+              />
               <button
                 type="button"
-                onClick={() => setForm(f => ({ ...f, usa_sabores_dia: false }))}
-                className={`flex-1 text-xs font-medium py-1.5 rounded-md transition-colors ${
-                  !form.usa_sabores_dia ? 'bg-surface shadow-sm text-ink' : 'text-mute hover:text-ink'
-                }`}
+                onClick={agregarSabor}
+                className="px-3 py-2 bg-canvas border border-line rounded-lg text-sm hover:bg-oso-50 transition-colors"
               >
-                Sabores fijos
-              </button>
-              <button
-                type="button"
-                onClick={() => setForm(f => ({ ...f, usa_sabores_dia: true }))}
-                className={`flex-1 text-xs font-medium py-1.5 rounded-md transition-colors ${
-                  form.usa_sabores_dia ? 'bg-surface shadow-sm text-ink' : 'text-mute hover:text-ink'
-                }`}
-              >
-                Según sabores del día
+                Agregar
               </button>
             </div>
-
-            {form.usa_sabores_dia ? (
-              <div className="bg-oso-50 border border-oso-200 rounded-lg p-3 text-xs text-oso-900 space-y-2">
-                <p>
-                  Este producto usa los sabores que estén marcados "hoy sí" en la sección
-                  <strong> Sabores del día</strong>. No necesita su propia lista.
-                </p>
-                {onIrASaboresDia && (
-                  <button
-                    type="button"
-                    onClick={onIrASaboresDia}
-                    className="text-oso-800 font-medium underline underline-offset-2 hover:text-oso-900"
-                  >
-                    Ir a Sabores del día →
-                  </button>
-                )}
+            {form.sabores.length > 0 ? (
+              <div className="space-y-1.5">
+                {form.sabores.map(s => (
+                  <div key={s.nombre} className="flex items-center gap-2 bg-canvas/50 border border-line rounded-lg px-2.5 py-1.5">
+                    <button
+                      type="button"
+                      onClick={() => toggleSabor(s.nombre)}
+                      className={`relative rounded-full transition-colors shrink-0 ${s.disponible ? 'bg-oso-600' : 'bg-line'}`}
+                      style={{ height: '20px', width: '36px' }}
+                      aria-label={s.disponible ? 'Disponible hoy' : 'No disponible hoy'}
+                    >
+                      <span
+                        className="absolute top-0.5 left-0.5 bg-white rounded-full transition-transform"
+                        style={{ height: '16px', width: '16px', transform: s.disponible ? 'translateX(16px)' : 'none' }}
+                      />
+                    </button>
+                    <span className={`text-sm flex-1 ${s.disponible ? 'text-ink' : 'text-mute line-through'}`}>{s.nombre}</span>
+                    <span className="text-[11px] text-mute">{s.disponible ? 'hoy sí' : 'hoy no'}</span>
+                    <button
+                      type="button"
+                      onClick={() => quitarSabor(s.nombre)}
+                      className="text-mute hover:text-red-600 text-lg leading-none"
+                      aria-label={`Quitar ${s.nombre}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
               </div>
             ) : (
-              <>
-                <div className="flex gap-2 mb-2">
-                  <input
-                    type="text"
-                    value={nuevoSabor}
-                    onChange={e => setNuevoSabor(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        agregarSabor()
-                      }
-                    }}
-                    placeholder="Chocolate"
-                    className="input flex-1"
-                  />
-                  <button
-                    type="button"
-                    onClick={agregarSabor}
-                    className="px-3 py-2 bg-canvas border border-line rounded-lg text-sm hover:bg-oso-50 transition-colors"
-                  >
-                    Agregar
-                  </button>
-                </div>
-                {form.sabores.length > 0 ? (
-                  <div className="space-y-1.5">
-                    {form.sabores.map(s => (
-                      <div key={s.nombre} className="flex items-center gap-2 bg-canvas/50 border border-line rounded-lg px-2.5 py-1.5">
-                        <button
-                          type="button"
-                          onClick={() => toggleSabor(s.nombre)}
-                          className={`relative rounded-full transition-colors shrink-0 ${s.disponible ? 'bg-oso-600' : 'bg-line'}`}
-                          style={{ height: '20px', width: '36px' }}
-                          aria-label={s.disponible ? 'Disponible hoy' : 'No disponible hoy'}
-                        >
-                          <span
-                            className="absolute top-0.5 left-0.5 bg-white rounded-full transition-transform"
-                            style={{ height: '16px', width: '16px', transform: s.disponible ? 'translateX(16px)' : 'none' }}
-                          />
-                        </button>
-                        <span className={`text-sm flex-1 ${s.disponible ? 'text-ink' : 'text-mute line-through'}`}>{s.nombre}</span>
-                        <span className="text-[11px] text-mute">{s.disponible ? 'hoy sí' : 'hoy no'}</span>
-                        <button
-                          type="button"
-                          onClick={() => quitarSabor(s.nombre)}
-                          className="text-mute hover:text-red-600 text-lg leading-none"
-                          aria-label={`Quitar ${s.nombre}`}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-mute">Déjalo vacío si este producto no maneja sabores variables. El bot solo menciona los que estén en "hoy sí".</p>
-                )}
-              </>
+              <p className="text-[11px] text-mute">Déjalo vacío si este producto no maneja sabores variables. El bot solo menciona los que estén marcados "hoy sí".</p>
             )}
           </Field>
 
