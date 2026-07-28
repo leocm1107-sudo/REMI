@@ -101,6 +101,7 @@ export default function Logistica({ session }: { session: Session }) {
   const [pagoGuardado, setPagoGuardado]         = useState(false)
   const [cargando, setCargando] = useState(true)
   const [restauranteId, setRestauranteId] = useState<string | null>(null)
+  const [tab, setTab] = useState<'cola' | 'horarios' | 'pagos'>('cola')
   const marca = useMarca()
 
   useEffect(() => {
@@ -353,6 +354,29 @@ export default function Logistica({ session }: { session: Session }) {
         </p>
       </div>
 
+      {esDueno && (
+        <div className="flex gap-2 mb-7">
+          {([
+            ['cola', 'Cola y tiempos'],
+            ['horarios', 'Horarios'],
+            ['pagos', 'Pagos'],
+          ] as const).map(([v, label]) => (
+            <button
+              key={v}
+              onClick={() => setTab(v)}
+              className={cn(
+                "px-4 py-1.5 rounded-full text-sm font-medium transition-colors",
+                tab === v ? "bg-oso-800 text-white" : "bg-oso-100 text-oso-800 hover:bg-oso-200"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === 'cola' && (
+      <>
       {/* ───────── ZONA 2: Tiempos estimados ───────── */}
       {!marca.features?.agendamiento && (
         <section className="mb-8">
@@ -447,11 +471,12 @@ export default function Logistica({ session }: { session: Session }) {
           </div>
         )}
       </section>
+      </>
+      )}
 
-      {/* ───────── ZONA 3: Configuración (solo dueño) ───────── */}
-      {esDueno && config && (
+      {/* ───────── ZONA 3: Horarios (solo dueño) ───────── */}
+      {esDueno && config && tab === 'horarios' && (
         <section>
-          <h2 className="font-display text-lg font-semibold tracking-tight mb-3">Configuración</h2>
           <div className="bg-surface border border-line rounded-xl p-5 space-y-5">
 
             {/* Horario por día de la semana */}
@@ -631,9 +656,15 @@ export default function Logistica({ session }: { session: Session }) {
                 Acumulada: los pedidos hechos fuera de horario se le mandan todos juntos un rato antes de abrir.
               </p>
             </div>
+          </div>
+        </section>
+      )}
 
-            {/* ── Métodos de pago ── */}
-            <div className="border-t border-line pt-5">
+      {/* ───────── ZONA 4: Pagos (solo dueño) ───────── */}
+      {esDueno && config && tab === 'pagos' && (
+        <section>
+          <div className="bg-surface border border-line rounded-xl p-5">
+            <div>
               <label className="block text-xs font-medium uppercase tracking-wider text-mute mb-2">
                 Métodos de pago
               </label>

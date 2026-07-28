@@ -16,7 +16,7 @@ const SECCIONES = [
   { to: '/personalizados', label: 'Personalizadas',   end: false, soloDueno: false, feature: 'personalizacion' },
   { to: '/menu',          label: 'Menú',              end: false, soloDueno: false },
   { to: '/importar',      label: 'Importar menú',     end: false, soloDueno: true },
-  { to: '/cronograma',    label: 'Cronograma',        end: false, soloDueno: false, feature: 'agendamiento' },
+  { to: '/agenda',        label: 'Agenda',            end: false, soloDueno: false, feature: 'agendamiento' },
   { to: '/logistica',     label: 'Logística',         end: false, soloDueno: false },
   { to: '/zonas',         label: 'Zonas de domicilio', end: false, soloDueno: true },
   { to: '/clientes',      label: 'Clientes',          end: false, soloDueno: true },

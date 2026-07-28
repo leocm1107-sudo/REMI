@@ -13,7 +13,7 @@ import Clientes from './pages/Clientes'
 import Usuarios from './pages/Usuarios'
 import Configuracion from './pages/Configuracion'
 import Layout from './components/Layout'
-import Cronograma from './pages/Cronograma'
+import Agenda from './pages/Agenda'
 import Personalizados from './pages/Personalizados'
 
 export default function App() {
@@ -67,14 +67,13 @@ export default function App() {
           <Route path="personalizados" element={<Personalizados session={session} />} />
           <Route path="menu" element={<Menu session={session} />} />
           <Route path="importar" element={<ImportarMenu session={session} />} />
-          <Route path="cronograma" element={<Cronograma session={session} />} />
+          <Route path="agenda" element={<Agenda session={session} />} />
           <Route path="logistica" element={<Logistica session={session} />} />
           <Route path="zonas" element={<ZonasDomicilio session={session} />} />
           <Route path="clientes" element={<Clientes session={session} />} />
           <Route path="usuarios" element={<Usuarios session={session} />} />
           <Route path="configuracion" element={<Configuracion session={session} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
-          <Route path="cronograma" element={<Cronograma session={session} />} />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -1,6 +1,8 @@
-// src/pages/Cronograma.tsx — Agenda de encargos
+// src/pages/Agenda.tsx — Agenda de encargos
 // Muestra las citas (revisión y entrega) agrupadas por día, y permite
 // confirmarlas o cancelarlas. Solo aparece en restaurantes con agendamiento.
+// (Antes "Cronograma" — sobre esta base se suman más adelante slots,
+// días on/off y Google Calendar, sin abrir una página nueva.)
 import { useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
@@ -45,7 +47,7 @@ const badge: Record<string, string> = {
   cancelada:  'bg-red-100 text-red-700',
 }
 
-export default function Cronograma({ session }: { session: Session }) {
+export default function Agenda({ session }: { session: Session }) {
   const [citas, setCitas]   = useState<Cita[]>([])
   const [cargando, setCargando] = useState(true)
   const [filtro, setFiltro] = useState<'todas' | 'revision' | 'entrega'>('todas')
@@ -66,7 +68,7 @@ export default function Cronograma({ session }: { session: Session }) {
   useEffect(() => { cargar() }, [])
 
   useEffect(() => {
-    const canal = supabase.channel('citas-cronograma')
+    const canal = supabase.channel('citas-agenda')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'citas' }, cargar)
       .subscribe()
     return () => { supabase.removeChannel(canal) }
@@ -102,7 +104,7 @@ export default function Cronograma({ session }: { session: Session }) {
   return (
     <div className="max-w-3xl mx-auto px-4 py-6">
       <div className="mb-7">
-        <h1 className="font-display text-4xl font-semibold tracking-tight mb-1">Cronograma</h1>
+        <h1 className="font-display text-4xl font-semibold tracking-tight mb-1">Agenda</h1>
         <p className="text-mute text-sm">
           {pendientes > 0
             ? `${pendientes} cita${pendientes === 1 ? '' : 's'} por confirmar`
