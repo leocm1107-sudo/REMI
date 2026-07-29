@@ -5,10 +5,20 @@ import { cn, formatCOP } from '../lib/utils'
 import type { Plato, Categoria, PerfilUsuario } from '../lib/types'
 import PlatoEditor from '../components/PlatoEditor'
 
+type FotoGaleria = {
+  id: string
+  plato_id: string
+  foto_url: string
+  pie: string
+  orden: number
+  enviar_por_bot: boolean
+}
+
 export default function Menu({ session }: { session: Session }) {
   const [platos, setPlatos]         = useState<Plato[]>([])
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [perfil, setPerfil]         = useState<PerfilUsuario | null>(null)
+  const [fotos, setFotos]           = useState<FotoGaleria[]>([])
   const [cargando, setCargando]     = useState(true)
   const [busqueda, setBusqueda]     = useState('')
   const [catFiltro, setCatFiltro]   = useState<string | 'todas'>('todas')
@@ -18,15 +28,17 @@ export default function Menu({ session }: { session: Session }) {
   useEffect(() => {
     let activo = true
     async function cargar() {
-      const [u, c, p] = await Promise.all([
+      const [u, c, p, f] = await Promise.all([
         supabase.from('usuarios_panel').select('nombre, rol').eq('user_id', session.user.id).single(),
         supabase.from('categorias').select('*').order('orden', { ascending: true, nullsFirst: false }).order('nombre'),
-        supabase.from('platos').select('*').order('orden', { ascending: true, nullsFirst: false }).order('nombre')
+        supabase.from('platos').select('*').order('orden', { ascending: true, nullsFirst: false }).order('nombre'),
+        supabase.from('plato_fotos').select('*').order('orden', { ascending: true, nullsFirst: false })
       ])
       if (!activo) return
       if (u.data)  setPerfil(u.data as PerfilUsuario)
       if (c.data)  setCategorias(c.data as Categoria[])
       if (p.data)  setPlatos(p.data as Plato[])
+      if (f.data)  setFotos(f.data as FotoGaleria[])
       setCargando(false)
     }
     cargar()
@@ -48,6 +60,27 @@ export default function Menu({ session }: { session: Session }) {
             ))
           } else if (payload.eventType === 'DELETE') {
             setPlatos(prev => prev.filter(p => p.id !== (payload.old as any).id))
+          }
+        })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [])
+
+  // Realtime en plato_fotos (galería)
+  useEffect(() => {
+    const channel = supabase
+      .channel('plato-fotos-live')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'plato_fotos' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setFotos(prev => [...prev, payload.new as FotoGaleria])
+          } else if (payload.eventType === 'UPDATE') {
+            setFotos(prev => prev.map(f =>
+              f.id === (payload.new as any).id ? payload.new as FotoGaleria : f
+            ))
+          } else if (payload.eventType === 'DELETE') {
+            setFotos(prev => prev.filter(f => f.id !== (payload.old as any).id))
           }
         })
       .subscribe()
@@ -78,15 +111,28 @@ export default function Menu({ session }: { session: Session }) {
     return mapa
   }, [platosFiltrados, categorias])
 
-  // Refresca solo la lista de platos (tras editar/crear/eliminar).
-  // Respaldo por si realtime no está habilitado para 'platos'.
+  const fotosPorPlato = useMemo(() => {
+    const mapa = new Map<string, FotoGaleria[]>()
+    for (const f of fotos) {
+      const lista = mapa.get(f.plato_id)
+      if (lista) lista.push(f)
+      else mapa.set(f.plato_id, [f])
+    }
+    return mapa
+  }, [fotos])
+
+  // Refresca la lista de platos y su galería (tras editar/crear/eliminar).
+  // Respaldo por si realtime no está habilitado para 'platos' o 'plato_fotos'.
   async function recargarPlatos() {
-    const { data } = await supabase
-      .from('platos')
-      .select('*')
-      .order('orden', { ascending: true, nullsFirst: false })
-      .order('nombre')
-    if (data) setPlatos(data as Plato[])
+    const [p, f] = await Promise.all([
+      supabase.from('platos').select('*')
+        .order('orden', { ascending: true, nullsFirst: false })
+        .order('nombre'),
+      supabase.from('plato_fotos').select('*')
+        .order('orden', { ascending: true, nullsFirst: false })
+    ])
+    if (p.data) setPlatos(p.data as Plato[])
+    if (f.data) setFotos(f.data as FotoGaleria[])
   }
 
   async function toggleDisponible(plato: Plato) {
@@ -174,6 +220,7 @@ export default function Menu({ session }: { session: Session }) {
                     <PlatoCard
                       key={plato.id}
                       plato={plato}
+                      fotos={fotosPorPlato.get(plato.id) ?? []}
                       esDueno={esDueno}
                       onToggle={() => toggleDisponible(plato)}
                       onEdit={() => setEditando(plato)}
@@ -198,9 +245,10 @@ export default function Menu({ session }: { session: Session }) {
 }
 
 function PlatoCard({
-  plato, esDueno, onToggle, onEdit
+  plato, fotos, esDueno, onToggle, onEdit
 }: {
   plato: Plato
+  fotos: FotoGaleria[]
   esDueno: boolean
   onToggle: () => void
   onEdit: () => void
@@ -208,6 +256,8 @@ function PlatoCard({
   const ingredientes = Array.isArray(plato.ingredientes) ? plato.ingredientes : []
   const ingredientesVisibles = ingredientes.slice(0, 4)
   const ingredientesRestantes = ingredientes.length - ingredientesVisibles.length
+  const controlaStock = (plato as any).controla_stock as boolean | undefined
+  const stock = (plato as any).stock as number | null | undefined
 
   return (
     <div className={cn(
@@ -232,6 +282,21 @@ function PlatoCard({
           </span>
         </div>
 
+        {controlaStock && (
+          <div className="mb-1.5">
+            <span className={cn(
+              "text-[10px] font-medium px-1.5 py-0.5 rounded-full tnum",
+              (stock ?? 0) <= 0
+                ? "bg-red-100 text-red-800"
+                : (stock ?? 0) <= 3
+                ? "bg-amber-100 text-amber-800"
+                : "bg-canvas text-mute"
+            )}>
+              {(stock ?? 0) <= 0 ? 'Sin unidades' : `Quedan ${stock}`}
+            </span>
+          </div>
+        )}
+
         {plato.descripcion && (
           <p className="text-xs text-mute line-clamp-2 mb-3 leading-relaxed">{plato.descripcion}</p>
         )}
@@ -246,6 +311,16 @@ function PlatoCard({
             {ingredientesRestantes > 0 && (
               <span className="text-[10px] px-1.5 py-0.5 text-mute">+{ingredientesRestantes}</span>
             )}
+          </div>
+        )}
+
+        {fotos.length > 0 && (
+          <div className="flex gap-1.5 mb-3 overflow-x-auto">
+            {fotos.map(f => (
+              <div key={f.id} className="shrink-0 w-12 h-12 rounded-md overflow-hidden border border-line bg-canvas" title={f.pie || undefined}>
+                <img src={f.foto_url} alt={f.pie || plato.nombre} className="w-full h-full object-cover" />
+              </div>
+            ))}
           </div>
         )}
 

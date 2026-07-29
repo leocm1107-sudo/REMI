@@ -19,6 +19,16 @@ type FormData = {
   keywords: string
   ingredientes: string[]
   sabores: { nombre: string; disponible: boolean }[]
+  controla_stock: boolean
+  stock: number
+}
+
+type FotoGaleria = {
+  id: string
+  foto_url: string
+  pie: string
+  orden: number
+  enviar_por_bot: boolean
 }
 
 const FORM_INICIAL: FormData = {
@@ -31,7 +41,9 @@ const FORM_INICIAL: FormData = {
   foto_url: '',
   keywords: '',
   ingredientes: [],
-  sabores: []
+  sabores: [],
+  controla_stock: false,
+  stock: 0
 }
 
 export default function PlatoEditor({ plato, categorias, onClose }: Props) {
@@ -41,6 +53,8 @@ export default function PlatoEditor({ plato, categorias, onClose }: Props) {
   const [nuevoSabor, setNuevoSabor]           = useState('')
   const [guardando, setGuardando]             = useState(false)
   const [error, setError]                     = useState('')
+  const [galeria, setGaleria]                 = useState<FotoGaleria[]>([])
+  const [subiendoFoto, setSubiendoFoto]       = useState(false)
 
   // Cargar datos del plato a editar
   useEffect(() => {
@@ -55,12 +69,31 @@ export default function PlatoEditor({ plato, categorias, onClose }: Props) {
         foto_url:     plato.foto_url ?? '',
         keywords:     plato.keywords ?? '',
         ingredientes:    Array.isArray(plato.ingredientes) ? plato.ingredientes : [],
-        sabores:         Array.isArray((plato as any).sabores) ? (plato as any).sabores : []
+        sabores:         Array.isArray((plato as any).sabores) ? (plato as any).sabores : [],
+        controla_stock:  (plato as any).controla_stock ?? false,
+        stock:           (plato as any).stock ?? 0
       })
     } else {
       setForm({ ...FORM_INICIAL, categoria_id: categorias[0]?.id ?? '' })
     }
   }, [plato, categorias])
+
+  // Cargar galería de fotos de referencia (solo para platos ya existentes)
+  useEffect(() => {
+    let activo = true
+    async function cargarGaleria() {
+      if (!plato) { setGaleria([]); return }
+      const { data, error } = await supabase
+        .from('plato_fotos')
+        .select('id, foto_url, pie, orden, enviar_por_bot')
+        .eq('plato_id', plato.id)
+        .order('orden', { ascending: true, nullsFirst: false })
+      if (!activo) return
+      if (!error && data) setGaleria(data as FotoGaleria[])
+    }
+    cargarGaleria()
+    return () => { activo = false }
+  }, [plato])
 
   // Cerrar con Escape
   useEffect(() => {
@@ -97,6 +130,52 @@ export default function PlatoEditor({ plato, categorias, onClose }: Props) {
     setForm(f => ({ ...f, sabores: f.sabores.map(x => x.nombre === nombre ? { ...x, disponible: !x.disponible } : x) }))
   }
 
+  async function subirFotoGaleria(f: File) {
+    if (!plato) return // requiere plato_id, se habilita solo en edición
+    setSubiendoFoto(true)
+    const ruta = `galeria_${plato.id}_${Date.now()}_${f.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+    const { error: errSubida } = await supabase.storage.from('platos').upload(ruta, f)
+    if (errSubida) {
+      setSubiendoFoto(false)
+      alert('No se pudo subir la foto: ' + errSubida.message)
+      return
+    }
+    const { data } = supabase.storage.from('platos').getPublicUrl(ruta)
+    const orden = galeria.length
+    const { data: fila, error: errInsert } = await supabase
+      .from('plato_fotos')
+      .insert({ plato_id: plato.id, foto_url: data.publicUrl, pie: '', orden, enviar_por_bot: true })
+      .select('id, foto_url, pie, orden, enviar_por_bot')
+      .single()
+    setSubiendoFoto(false)
+    if (errInsert) { alert('No se pudo guardar la foto en la galería: ' + errInsert.message); return }
+    setGaleria(g => [...g, fila as FotoGaleria])
+  }
+
+  async function quitarFotoGaleria(id: string) {
+    setGaleria(g => g.filter(f => f.id !== id)) // optimista
+    const { error } = await supabase.from('plato_fotos').delete().eq('id', id)
+    if (error) alert('No se pudo eliminar la foto: ' + error.message)
+  }
+
+  function actualizarPieFoto(id: string, pie: string) {
+    setGaleria(g => g.map(f => f.id === id ? { ...f, pie } : f))
+  }
+
+  async function guardarPieFoto(id: string, pie: string) {
+    const { error } = await supabase.from('plato_fotos').update({ pie }).eq('id', id)
+    if (error) alert('No se pudo guardar el pie de foto: ' + error.message)
+  }
+
+  async function toggleEnviarPorBot(id: string, valorActual: boolean) {
+    setGaleria(g => g.map(f => f.id === id ? { ...f, enviar_por_bot: !valorActual } : f)) // optimista
+    const { error } = await supabase.from('plato_fotos').update({ enviar_por_bot: !valorActual }).eq('id', id)
+    if (error) {
+      setGaleria(g => g.map(f => f.id === id ? { ...f, enviar_por_bot: valorActual } : f)) // rollback
+      alert('No se pudo actualizar: ' + error.message)
+    }
+  }
+
   async function guardar() {
     setError('')
     if (!form.nombre.trim()) { setError('El nombre es obligatorio'); return }
@@ -115,6 +194,8 @@ export default function PlatoEditor({ plato, categorias, onClose }: Props) {
       keywords:     form.keywords.trim() || null,
       ingredientes:    form.ingredientes.length > 0 ? form.ingredientes : null,
       sabores:         form.sabores,
+      controla_stock:  form.controla_stock,
+      stock:           form.controla_stock ? form.stock : null,
       updated_at:      new Date().toISOString()
     }
 
@@ -355,6 +436,99 @@ export default function PlatoEditor({ plato, categorias, onClose }: Props) {
               className="input mt-2"
               placeholder="…o pega una URL"
             />
+          </Field>
+
+          <Field label="Inventario">
+            <label className="flex items-center gap-2 cursor-pointer mb-2">
+              <input
+                type="checkbox"
+                checked={form.controla_stock}
+                onChange={e => setForm({ ...form, controla_stock: e.target.checked })}
+                className="w-4 h-4 rounded border-line accent-oso-600"
+              />
+              <span className="text-sm">Controlar unidades disponibles</span>
+            </label>
+            {form.controla_stock ? (
+              <>
+                <input
+                  type="number"
+                  value={form.stock || ''}
+                  onChange={e => setForm({ ...form, stock: parseInt(e.target.value || '0', 10) })}
+                  className="input tnum"
+                  placeholder="Unidades disponibles"
+                  min={0}
+                />
+                <p className="text-[11px] text-mute mt-1.5">
+                  El bot y el panel descuentan una unidad cuando un pedido con este producto queda confirmado y pagado. Al llegar a 0 se marca "Agotado" automáticamente.
+                </p>
+              </>
+            ) : (
+              <p className="text-[11px] text-mute">Sin límite de unidades — el producto solo depende del toggle "Disponible para pedir".</p>
+            )}
+          </Field>
+
+          <Field label="Fotos de referencia (galería)">
+            {!plato ? (
+              <p className="text-[11px] text-mute">Guarda el plato primero; luego podrás agregarle una galería de fotos de referencia.</p>
+            ) : (
+              <>
+                {galeria.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    {galeria.map(f => (
+                      <div key={f.id} className="border border-line rounded-lg overflow-hidden bg-canvas/50">
+                        <img src={f.foto_url} alt={f.pie || ''} className="w-full h-20 object-cover" />
+                        <div className="p-1.5 space-y-1.5">
+                          <input
+                            type="text"
+                            value={f.pie}
+                            onChange={e => actualizarPieFoto(f.id, e.target.value)}
+                            onBlur={e => guardarPieFoto(f.id, e.target.value)}
+                            placeholder="Pie de foto…"
+                            className="input text-xs py-1"
+                          />
+                          <div className="flex items-center justify-between">
+                            <button
+                              type="button"
+                              onClick={() => toggleEnviarPorBot(f.id, f.enviar_por_bot)}
+                              className={`text-[10px] px-1.5 py-0.5 rounded-full transition-colors ${
+                                f.enviar_por_bot
+                                  ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                              }`}
+                            >
+                              {f.enviar_por_bot ? 'Bot: sí' : 'Bot: no'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => quitarFotoGaleria(f.id)}
+                              className="text-mute hover:text-red-600 text-xs px-1"
+                              aria-label="Quitar foto"
+                            >
+                              Quitar
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="input"
+                  disabled={subiendoFoto}
+                  onChange={async e => {
+                    const f = e.target.files?.[0]
+                    if (!f) return
+                    await subirFotoGaleria(f)
+                    e.target.value = ''
+                  }}
+                />
+                <p className="text-[11px] text-mute mt-1.5">
+                  {subiendoFoto ? 'Subiendo…' : 'Se muestran junto a la tarjeta del producto. Apaga "Bot" en las que sean solo de uso interno.'}
+                </p>
+              </>
+            )}
           </Field>
 
           <Field label="Palabras clave (para búsqueda del bot)">
