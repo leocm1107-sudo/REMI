@@ -8,7 +8,11 @@ import { supabase } from '../lib/supabase'
 import { formatCOP } from '../lib/utils'
 
 type Presentacion = { id: string; nombre: string; detalle: string | null; precio: number; orden: number }
-type PlatoMin = { id: string; nombre: string; precio: number; keywords: string | null; presentaciones: Presentacion[] }
+type PlatoMin = {
+  id: string; nombre: string; precio: number; keywords: string | null
+  controla_stock: boolean; stock: number
+  presentaciones: Presentacion[]
+}
 type Item = { plato_id: string | null; nombre: string; precio: number; cantidad: number; notas: string }
 
 const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-oso-300'
@@ -39,14 +43,20 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
   useEffect(() => {
     async function cargar() {
       const [{ data: platosData }, { data: presData }] = await Promise.all([
-        supabase.from('platos').select('id, nombre, precio, keywords').eq('disponible', true).order('nombre'),
+        supabase.from('platos').select('id, nombre, precio, keywords, controla_stock, stock')
+          .eq('disponible', true).order('nombre'),
         supabase.from('presentaciones').select('id, plato_id, nombre, detalle, precio, orden').eq('disponible', true).order('orden'),
       ])
       const porPlato: Record<string, Presentacion[]> = {}
       for (const pr of (presData ?? []) as any[]) {
         (porPlato[pr.plato_id] ??= []).push({ id: pr.id, nombre: pr.nombre, detalle: pr.detalle, precio: pr.precio, orden: pr.orden })
       }
-      setPlatos(((platosData ?? []) as any[]).map(p => ({ ...p, presentaciones: porPlato[p.id] ?? [] })) as PlatoMin[])
+      setPlatos(((platosData ?? []) as any[]).map(p => ({
+        ...p,
+        controla_stock: p.controla_stock === true,
+        stock: Math.max(0, p.stock ?? 0),
+        presentaciones: porPlato[p.id] ?? [],
+      })) as PlatoMin[])
     }
     cargar()
   }, [])
@@ -72,6 +82,40 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
   const subtotal = useMemo(() => items.reduce((s, i) => s + i.precio * i.cantidad, 0), [items])
   const total = subtotal + (tipo === 'domicilio' ? (parseInt(domicilioValor) || 0) : 0)
 
+  // ── STOCK ──────────────────────────────────────────────────────────────
+  // El stock vive en el PLATO, no en la presentación: dos tamaños de la misma
+  // torta comen del mismo inventario. Por eso todo se cuenta por plato_id.
+  const platoPorId = useMemo(() => {
+    const m: Record<string, PlatoMin> = {}
+    for (const p of platos) m[p.id] = p
+    return m
+  }, [platos])
+
+  const usadoPorPlato = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const it of items) if (it.plato_id) m[it.plato_id] = (m[it.plato_id] ?? 0) + it.cantidad
+    return m
+  }, [items])
+
+  // null = sin control de inventario (sin tope)
+  function stockDe(plato_id: string | null) {
+    if (!plato_id) return null
+    const p = platoPorId[plato_id]
+    if (!p || !p.controla_stock) return null
+    const usado = usadoPorPlato[plato_id] ?? 0
+    return { nombre: p.nombre, stock: p.stock, usado, libre: Math.max(0, p.stock - usado) }
+  }
+
+  const excesos = useMemo(() => {
+    const out: { nombre: string; pedido: number; stock: number }[] = []
+    for (const plato_id of Object.keys(usadoPorPlato)) {
+      const usado = usadoPorPlato[plato_id] ?? 0
+      const p = platoPorId[plato_id]
+      if (p?.controla_stock && usado > p.stock) out.push({ nombre: p.nombre, pedido: usado, stock: p.stock })
+    }
+    return out
+  }, [usadoPorPlato, platoPorId])
+
   function normalizarTel(t: string) {
     const d = t.replace(/\D/g, '')
     return d.length === 10 && d.startsWith('3') ? '57' + d : d
@@ -90,6 +134,13 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
   // Agrega (o suma cantidad a) una línea de pedido. Dedupe por plato_id + nombre,
   // así dos tamaños distintos del mismo plato quedan como líneas separadas.
   function agregarItem(plato_id: string | null, nombreLinea: string, precio: number) {
+    const st = stockDe(plato_id)
+    if (st && st.libre <= 0) {
+      setMsg({ ok: false, texto: `${st.nombre}: solo quedan ${st.stock} unidad(es) y ya están en el pedido.` })
+      setBusca(''); setPlatoTamanos(null)
+      return
+    }
+    setMsg(null)
     setItems(prev => {
       const i = prev.findIndex(x => x.plato_id === plato_id && x.nombre === nombreLinea)
       if (i >= 0) { const c = [...prev]; c[i] = { ...c[i], cantidad: c[i].cantidad + 1 }; return c }
@@ -122,12 +173,28 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
   }
 
   function setItem(i: number, patch: Partial<Item>) {
-    setItems(prev => prev.map((x, j) => j === i ? { ...x, ...patch } : x))
+    setItems(prev => prev.map((x, j) => {
+      if (j !== i) return x
+      const next = { ...x, ...patch }
+      if (patch.cantidad !== undefined && x.plato_id) {
+        const p = platoPorId[x.plato_id]
+        if (p?.controla_stock) {
+          // otras líneas del mismo plato ya consumen parte del stock
+          const otras = prev.reduce((s, y, k) => s + (k !== i && y.plato_id === x.plato_id ? y.cantidad : 0), 0)
+          next.cantidad = Math.max(1, Math.min(next.cantidad, Math.max(1, p.stock - otras)))
+        }
+      }
+      return next
+    }))
   }
 
   async function guardar() {
     setMsg(null)
     if (items.length === 0) { setMsg({ ok: false, texto: 'Agrega al menos un producto.' }); return }
+    if (excesos.length > 0) {
+      setMsg({ ok: false, texto: 'Sin unidades suficientes: ' + excesos.map(e => `${e.nombre} (pediste ${e.pedido}, quedan ${e.stock})`).join('; ') })
+      return
+    }
     setGuardando(true)
     const { data, error } = await supabase.rpc('crear_pedido_manual', {
       p_telefono: telefono,
@@ -216,10 +283,19 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
                     const precios = conTamanos ? p.presentaciones.map(pr => pr.precio) : []
                     const min = conTamanos ? Math.min(...precios) : p.precio
                     const max = conTamanos ? Math.max(...precios) : p.precio
+                    const st = stockDe(p.id)
+                    const agotado = st !== null && st.libre <= 0
                     return (
-                      <button key={p.id} onClick={() => elegir(p)}
-                        className="w-full flex justify-between px-3 py-2 text-sm hover:bg-oso-50 text-left">
-                        <span>{p.nombre}</span>
+                      <button key={p.id} onClick={() => elegir(p)} disabled={agotado}
+                        className={`w-full flex justify-between px-3 py-2 text-sm text-left ${agotado ? 'opacity-50 cursor-not-allowed' : 'hover:bg-oso-50'}`}>
+                        <span>
+                          {p.nombre}
+                          {st && (
+                            <span className={`ml-1.5 text-[11px] ${agotado ? 'text-red-600' : 'text-amber-700'}`}>
+                              {agotado ? '· sin unidades libres' : `· quedan ${st.libre}`}
+                            </span>
+                          )}
+                        </span>
                         <span className="tnum text-mute">
                           {conTamanos && min !== max ? `${formatCOP(min)}–${formatCOP(max)}` : formatCOP(min)}
                           {conTamanos && <span className="text-oso-600 ml-1">· elegir tamaño</span>}
@@ -248,20 +324,30 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
               )}
             </div>
 
-            {items.map((it, i) => (
-              <div key={i} className="border border-line rounded-lg p-2 space-y-2">
+            {items.map((it, i) => {
+              const st = stockDe(it.plato_id)
+              const tope = st !== null && st.libre <= 0
+              return (
+              <div key={i} className={`border rounded-lg p-2 space-y-2 ${st && st.usado > st.stock ? 'border-red-300 bg-red-50' : 'border-line'}`}>
                 <div className="flex items-center gap-2">
                   <button className={btnSec} onClick={() => setItem(i, { cantidad: Math.max(1, it.cantidad - 1) })}>−</button>
                   <span className="tnum w-6 text-center text-sm">{it.cantidad}</span>
-                  <button className={btnSec} onClick={() => setItem(i, { cantidad: it.cantidad + 1 })}>+</button>
+                  <button className={`${btnSec} ${tope ? 'opacity-40 cursor-not-allowed' : ''}`} disabled={tope}
+                    onClick={() => setItem(i, { cantidad: it.cantidad + 1 })}>+</button>
                   <span className="flex-1 text-sm">{it.nombre}</span>
                   <span className="tnum text-sm">{formatCOP(it.precio * it.cantidad)}</span>
                   <button className="text-mute hover:text-red-600 px-1" onClick={() => setItems(prev => prev.filter((_, j) => j !== i))}>✕</button>
                 </div>
+                {st && (
+                  <p className={`text-[11px] ${st.usado > st.stock ? 'text-red-700' : 'text-amber-700'}`}>
+                    Inventario: {st.stock} unidad(es) en total{st.usado > it.cantidad ? ` · ${st.usado} en este pedido` : ''}
+                    {tope ? ' · llegaste al tope' : ` · quedan ${st.libre}`}
+                  </p>
+                )}
                 <input className={inputCls} value={it.notas} onChange={e => setItem(i, { notas: e.target.value })}
                   placeholder="Notas (sin cebolla, término medio…)" />
               </div>
-            ))}
+            )})}
 
             <details className="text-sm">
               <summary className="cursor-pointer text-mute">Producto fuera de carta</summary>
@@ -293,8 +379,8 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
         <div className="sticky bottom-0 bg-canvas border-t border-line px-5 py-3">
           <button
             className="w-full px-4 py-2.5 bg-oso-600 text-white rounded-lg text-sm font-medium hover:bg-oso-700 disabled:opacity-50 transition-colors"
-            disabled={guardando} onClick={guardar}>
-            {guardando ? 'Creando…' : 'Crear pedido'}
+            disabled={guardando || excesos.length > 0} onClick={guardar}>
+            {guardando ? 'Creando…' : excesos.length > 0 ? 'Revisa las unidades' : 'Crear pedido'}
           </button>
         </div>
       </div>
