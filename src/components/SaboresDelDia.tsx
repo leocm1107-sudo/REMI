@@ -1,8 +1,8 @@
-// src/components/SaboresDelDia.tsx — Sabores por producto
+// src/components/SaboresDelDia.tsx — Sabores por producto (vista en tarjetas)
 // Los sabores NO son una lista global: cada producto tiene los suyos (los del
 // Munchie no son los de una torta). El interruptor marca qué productos cambian
-// de sabor según el día; esos suben al tope de la lista y abren un desplegable
-// con sus sabores, que se agregan desde ahí mismo.
+// de sabor según el día; esos suben al tope y su tarjeta se abre para cargar
+// los sabores de hoy.
 //
 // Montar donde tenga sentido (arriba del Menú, o en su pestaña):
 //   import SaboresDelDia from '../components/SaboresDelDia'
@@ -13,7 +13,7 @@ import { supabase } from '../lib/supabase'
 type Sabor = { nombre: string; disponible: boolean }
 type Plato = { id: string; nombre: string; usa_sabores_dia: boolean; sabores: Sabor[] }
 
-const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-oso-300'
+const inputCls = 'w-full border border-line rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-oso-300'
 
 function normalizarSabores(raw: unknown): Sabor[] {
   if (!Array.isArray(raw)) return []
@@ -133,87 +133,85 @@ export default function SaboresDelDia() {
         </div>
       )}
 
-      <input className={`${inputCls} max-w-sm`} value={busca} onChange={e => setBusca(e.target.value)}
+      <input className={`${inputCls} max-w-sm !py-2 !text-sm`} value={busca} onChange={e => setBusca(e.target.value)}
         placeholder="Buscar producto…" />
 
       {cargando ? (
         <p className="text-sm text-mute">Cargando…</p>
       ) : (
-        <div className="space-y-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 items-start">
           {ordenados.map(p => {
             const activo = p.usa_sabores_dia
             const hoy = p.sabores.filter(s => s.disponible)
             const estaAbierto = abierto === p.id
+
             return (
               <div key={p.id}
-                className={`border rounded-lg overflow-hidden ${activo ? 'border-oso-300 bg-white' : 'border-line bg-white/60'}`}>
+                className={`border rounded-lg p-2.5 transition-colors ${
+                  activo ? 'border-oso-300 bg-white shadow-sm' : 'border-line bg-white/60'
+                }`}>
 
-                {/* Fila del producto */}
-                <div className="flex items-center gap-3 px-3 py-2.5">
+                {/* Cabecera de la tarjeta: toggle + nombre */}
+                <div className="flex items-center gap-2">
                   <button
                     role="switch" aria-checked={activo} aria-label={`Sabor del día en ${p.nombre}`}
                     onClick={() => alternarInterruptor(p)}
-                    className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${activo ? 'bg-oso-600' : 'bg-oso-100'}`}>
-                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${activo ? 'left-[22px]' : 'left-0.5'}`} />
+                    className={`relative w-8 h-4 rounded-full transition-colors shrink-0 ${activo ? 'bg-oso-600' : 'bg-oso-100'}`}>
+                    <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-all ${activo ? 'left-[18px]' : 'left-0.5'}`} />
                   </button>
-
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{p.nombre}</p>
-                    {activo && (
-                      <p className="text-xs text-mute truncate">
-                        {p.sabores.length === 0
-                          ? 'Sin sabores cargados'
-                          : hoy.length === 0
-                            ? 'Hoy no hay ninguno disponible'
-                            : `Hoy: ${hoy.map(s => s.nombre).join(', ')}`}
-                      </p>
-                    )}
-                  </div>
-
-                  {activo && (
-                    <button onClick={() => setAbierto(estaAbierto ? null : p.id)}
-                      className="text-sm text-oso-700 hover:text-oso-900 shrink-0">
-                      {estaAbierto ? 'Cerrar ▲' : `Sabores (${p.sabores.length}) ▼`}
-                    </button>
-                  )}
+                  <p className="text-xs font-medium truncate flex-1 min-w-0" title={p.nombre}>{p.nombre}</p>
                 </div>
 
-                {/* Desplegable de sabores */}
+                {activo && (
+                  <>
+                    <p className="text-[11px] text-mute mt-1 leading-tight line-clamp-2">
+                      {p.sabores.length === 0
+                        ? 'Sin sabores cargados'
+                        : hoy.length === 0
+                          ? 'Hoy no hay ninguno'
+                          : hoy.map(s => s.nombre).join(', ')}
+                    </p>
+                    <button onClick={() => setAbierto(estaAbierto ? null : p.id)}
+                      className="text-[11px] text-oso-700 hover:text-oso-900 mt-1">
+                      {estaAbierto ? 'Cerrar ▲' : `Editar (${p.sabores.length}) ▼`}
+                    </button>
+                  </>
+                )}
+
+                {/* Desplegable compacto: chips en vez de lista larga */}
                 {activo && estaAbierto && (
-                  <div className="border-t border-line px-3 py-3 space-y-2 bg-oso-50/40">
+                  <div className="mt-2 pt-2 border-t border-line space-y-1.5">
                     {p.sabores.length === 0 ? (
-                      <p className="text-xs text-mute">
-                        Agregá el primer sabor abajo. Los que dejes marcados son los que el bot ofrece hoy.
-                      </p>
+                      <p className="text-[11px] text-mute">Agregá el primer sabor abajo.</p>
                     ) : (
-                      <div className="space-y-1">
+                      <div className="flex flex-wrap gap-1">
                         {p.sabores.map((s, i) => (
-                          <div key={`${s.nombre}-${i}`} className="flex items-center gap-2">
-                            <label className="flex items-center gap-2 flex-1 cursor-pointer">
-                              <input type="checkbox" checked={s.disponible} onChange={() => alternarSabor(p, i)} />
-                              <span className={`text-sm ${s.disponible ? '' : 'text-mute line-through'}`}>{s.nombre}</span>
-                            </label>
+                          <span key={`${s.nombre}-${i}`}
+                            className={`inline-flex items-center gap-1 text-[11px] pl-2 pr-1 py-0.5 rounded-full border ${
+                              s.disponible ? 'bg-oso-50 border-oso-200 text-oso-800' : 'bg-canvas border-line text-mute line-through'
+                            }`}>
+                            <span onClick={() => alternarSabor(p, i)} className="cursor-pointer">{s.nombre}</span>
                             <button onClick={() => quitarSabor(p, i)}
-                              className="text-mute hover:text-red-600 px-1 text-sm" aria-label={`Quitar ${s.nombre}`}>✕</button>
-                          </div>
+                              className="hover:text-red-600 leading-none px-0.5" aria-label={`Quitar ${s.nombre}`}>✕</button>
+                          </span>
                         ))}
                       </div>
                     )}
 
-                    <div className="flex gap-2 pt-1">
+                    <div className="flex gap-1">
                       <input className={inputCls} value={nuevo[p.id] ?? ''}
                         onChange={e => setNuevo(n => ({ ...n, [p.id]: e.target.value }))}
                         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); agregarSabor(p) } }}
-                        placeholder="Agregar sabor (Maracuyá, Mora…)" />
+                        placeholder="Nuevo sabor…" />
                       <button onClick={() => agregarSabor(p)}
-                        className="px-3 py-2 bg-oso-100 text-oso-800 rounded-lg text-sm hover:bg-oso-200 transition-colors shrink-0">
-                        Agregar
+                        className="px-2 py-1 bg-oso-100 text-oso-800 rounded-md text-[11px] font-medium hover:bg-oso-200 transition-colors shrink-0">
+                        +
                       </button>
                     </div>
 
                     {p.sabores.length > 0 && hoy.length > 0 && (
                       <button onClick={() => apagarTodos(p)}
-                        className="text-xs text-mute hover:text-ink underline decoration-dotted">
+                        className="text-[10px] text-mute hover:text-ink underline decoration-dotted">
                         Hoy no hay ninguno
                       </button>
                     )}
