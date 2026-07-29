@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { cn, formatCOP } from '../lib/utils'
 import type { Plato, Categoria, PerfilUsuario } from '../lib/types'
 import PlatoEditor from '../components/PlatoEditor'
+import SaboresDelDia from '../components/SaboresDelDia'
 
 type FotoGaleria = {
   id: string
@@ -155,6 +156,8 @@ export default function Menu({ session }: { session: Session }) {
 
   return (
     <>
+      <SaboresDelDia />
+
       <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="font-display text-4xl font-semibold tracking-tight mb-1">Menú</h1>

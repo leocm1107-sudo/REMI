@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import NumerosBloqueados from '../components/NumerosBloqueados'
 
 type ConfigForm = {
   nombre: string
@@ -193,6 +194,8 @@ export default function Configuracion({ session: _session }: { session: Session 
             <input className="input tnum" value={form.telefono_jefe} onChange={e => set('telefono_jefe', e.target.value)} placeholder="573001234567" />
           </Campo>
         </Seccion>
+
+        <NumerosBloqueados />
 
         {/* Personalidad del bot */}
         <Seccion titulo="El bot" descripcion="Cómo habla tu asistente en WhatsApp.">
