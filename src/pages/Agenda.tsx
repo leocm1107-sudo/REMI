@@ -81,6 +81,25 @@ const CAPAS: Record<Capa, { nombre: string; punto: string; chip: string; activo:
 // publica en su historia: ¿hay cupo, va apretado, o ya no?
 type EstadoDia = 'sin_atencion' | 'cerrado' | 'sin_cupo' | 'casi' | 'disponible'
 
+// ── Paleta de la agenda ──────────────────────────────────────────────────
+// El calendario se ve como la "Agenda de Pedidos" que Angélica publica en sus
+// historias: fondo vino, número del día en un cuadrito blanco, símbolos
+// blancos. Que el panel y el cliente vean lo mismo evita que ella tenga que
+// traducir de un lado al otro.
+const VINO = {
+  fondo:        '#4A2A3C',
+  fondoCerrado: '#3C2131',
+  linea:        'rgba(255,255,255,0.14)',
+  vacio:        '#412536',
+}
+
+// Colores de cada capa sobre el vino: claros, para que se lean encima
+const CAPA_COLOR: Record<Capa, { hex: string; rgb: [number, number, number] }> = {
+  entrega:        { hex: '#E9C79E', rgb: [233, 199, 158] },  // crema
+  revision:       { hex: '#C7ACEC', rgb: [199, 172, 236] },  // lila
+  disponibilidad: { hex: '#9FDCB2', rgb: [159, 220, 178] },  // menta
+}
+
 function fechaLarga(iso: string) {
   const [a, m, d] = iso.split('-').map(Number)
   const f = new Date(a, m - 1, d)
@@ -125,20 +144,28 @@ const inputCls =
 function IconProhibido({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
-      <circle cx="12" cy="12" r="9.3" stroke="currentColor" strokeWidth="3" />
-      <line x1="5.4" y1="18.6" x2="18.6" y2="5.4" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.1" />
+      <line x1="5.6" y1="18.4" x2="18.4" y2="5.6" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" />
     </svg>
   )
 }
 
 // Símbolo de "día saturado de pedidos" — el triángulo de alerta, en un solo
 // color (sin el negro del ícono original), para usar en amarillo/ámbar.
+// Triángulo con las rayitas de "atención" a los lados, como en la pieza
 function IconAlerta({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
-      <path d="M12 3 L22 20.6 H2 Z" stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" strokeLinecap="round" />
-      <rect x="11" y="9.2" width="2" height="6" rx="1" fill="currentColor" />
-      <circle cx="12" cy="17.6" r="1.15" fill="currentColor" />
+      <path d="M12 6.4 L20.6 20.4 H3.4 Z" stroke="currentColor" strokeWidth="2"
+        strokeLinejoin="round" strokeLinecap="round" />
+      <rect x="11.1" y="11" width="1.8" height="4.6" rx="0.9" fill="currentColor" />
+      <circle cx="12" cy="17.6" r="1" fill="currentColor" />
+      <g stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+        <line x1="4.6" y1="6.2" x2="3.1" y2="4.7" />
+        <line x1="19.4" y1="6.2" x2="20.9" y2="4.7" />
+        <line x1="2.6" y1="10.4" x2="0.9" y2="10.4" />
+        <line x1="21.4" y1="10.4" x2="23.1" y2="10.4" />
+      </g>
     </svg>
   )
 }
@@ -148,8 +175,8 @@ function IconAlerta({ className }: { className?: string }) {
 function IconCheck({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
-      <circle cx="12" cy="12" r="9.3" stroke="currentColor" strokeWidth="2.4" />
-      <path d="M7.2 12.4 L10.5 15.7 L17.2 8.4" stroke="currentColor" strokeWidth="2.8"
+      <circle cx="11.4" cy="12.4" r="8.6" stroke="currentColor" strokeWidth="2.1" />
+      <path d="M6.6 12.6 L10.2 16.2 L20.4 4.6" stroke="currentColor" strokeWidth="2.4"
         strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
@@ -479,14 +506,21 @@ export default function Agenda({ session }: { session: Session }) {
     cargarConfig()
   }
 
-  // Qué tinte usar según cuántas y cuáles capas están encendidas
+  // Al filtrar, el vino se tiñe con el color de la capa que quedó encendida.
+  // Con todas (o ninguna) vuelve al vino puro de la marca.
   const tinte = useMemo(() => {
     const activas = (['entrega', 'revision', 'disponibilidad'] as Capa[]).filter(c => capas[c])
-    if (activas.length === 0 || activas.length === 3) return SIN_TINTE
-    if (activas.length === 1) return TINTES[activas[0]]
-    if (capas.entrega && capas.revision) return TINTES['entrega-revision']
-    if (capas.entrega && capas.disponibilidad) return TINTES['entrega-disponibilidad']
-    return TINTES['revision-disponibilidad']
+    if (activas.length === 0 || activas.length === 3) {
+      return { celda: VINO.fondo, celdaCerrada: VINO.fondoCerrado }
+    }
+    const mez = (i: number) =>
+      Math.round(activas.reduce((a, c) => a + CAPA_COLOR[c].rgb[i], 0) / activas.length)
+    const r = mez(0), g = mez(1), b = mez(2)
+    // El color de la capa se mezcla con el vino, sin taparlo
+    return {
+      celda:        `color-mix(in srgb, rgb(${r} ${g} ${b}) 16%, ${VINO.fondo})`,
+      celdaCerrada: `color-mix(in srgb, rgb(${r} ${g} ${b}) 10%, ${VINO.fondoCerrado})`,
+    }
   }, [capas])
 
   async function eliminarEvento(e: Evento) {
@@ -555,19 +589,21 @@ export default function Agenda({ session }: { session: Session }) {
                 return (
                   <div key={c} className="relative">
                     <div
-                      className={`flex items-center rounded-full text-[13px] font-semibold border-[1.5px] shadow-sm transition-colors ${
-                        on ? CAPAS[c].activo : 'bg-canvas text-ink border-line hover:bg-oso-50'
-                      }`}
+                      className="flex items-center rounded-full text-[13px] font-semibold border-[1.5px] shadow-sm transition-colors"
+                      style={on
+                        ? { background: CAPA_COLOR[c].hex, borderColor: CAPA_COLOR[c].hex, color: VINO.fondo }
+                        : { background: 'rgba(255,255,255,0.06)', borderColor: 'rgba(74,42,60,0.25)', color: '#4A2A3C' }}
                     >
                       <button
                         onClick={() => setCapas(p => ({ ...p, [c]: !p[c] }))}
                         aria-pressed={on}
                         className="flex items-center gap-1.5 pl-3.5 pr-2 py-1.5"
                       >
-                        <span className={`w-2.5 h-2.5 rounded-full ${on ? 'bg-white/90' : CAPAS[c].punto}`} />
+                        <span className="w-2.5 h-2.5 rounded-full"
+                          style={{ background: on ? VINO.fondo : CAPA_COLOR[c].hex }} />
                         {CAPAS[c].nombre}
                         {esEntrega && filtroEntrega !== 'todas' && (
-                          <span className={`text-[10px] font-medium ${on ? 'text-white/80' : 'text-mute'}`}>
+                          <span className="text-[10px] font-medium opacity-75">
                             · {filtroEntrega === 'normales' ? 'normales' : 'personalizadas'}
                           </span>
                         )}
@@ -577,9 +613,8 @@ export default function Agenda({ session }: { session: Session }) {
                           onClick={() => setMenuEntregaAbierto(v => !v)}
                           aria-label="Elegir entre entregas normales y personalizadas"
                           aria-expanded={menuEntregaAbierto}
-                          className={`pr-3 pl-1 py-1.5 border-l ${
-                            on ? 'border-white/30 text-white/90 hover:text-white' : 'border-line text-mute hover:text-ink'
-                          }`}
+                          className="pr-3 pl-1 py-1.5 border-l"
+                          style={{ borderColor: on ? 'rgba(74,42,60,0.25)' : 'rgba(74,42,60,0.18)' }}
                         >
                           <span className={`inline-block transition-transform text-[10px] ${menuEntregaAbierto ? 'rotate-180' : ''}`}>▾</span>
                         </button>
@@ -632,30 +667,32 @@ export default function Agenda({ session }: { session: Session }) {
             <p className="text-center text-mute py-20 text-sm">Cargando agenda…</p>
           ) : modo === 'calendario' ? (
             <>
-              <section className={`border border-line rounded-xl p-4 sm:p-5 transition-colors ${tinte.seccion}`}>
-                <div className="flex items-center justify-between mb-4 gap-3">
-                  <h2 className="font-display text-xl font-semibold tracking-tight capitalize">
+              <section className="bg-white border border-line rounded-xl p-4 sm:p-5">
+                {/* Tarjeta vino: el mismo lenguaje visual de la agenda que se publica */}
+                <div className="rounded-2xl p-3 sm:p-4" style={{ background: VINO.fondo }}>
+                <div className="flex items-center justify-between mb-3 gap-3">
+                  <h2 className="font-display text-xl font-semibold tracking-tight capitalize text-white">
                     {MESES[vista.mes]} {vista.anio}
                   </h2>
                   <div className="flex items-center gap-2 flex-wrap justify-end">
                     {esDueno && (
-                      <label className="flex items-center gap-1.5 text-[11px] text-mute" title="Al llegar a este número de entregas en un día, se muestra el ícono de alerta">
-                        <IconAlerta className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      <label className="flex items-center gap-1.5 text-[11px] text-white/75" title="Al llegar a este número de entregas en un día, se muestra el ícono de alerta">
+                        <IconAlerta className="w-3.5 h-3.5 text-white/80 shrink-0" />
                         Máx./día
                         <input
                           type="number" min={1} value={maxPedidosDia}
                           onChange={e => setMaxPedidosDia(Math.max(1, Number(e.target.value) || 1))}
-                          className="w-12 px-1.5 py-1 bg-canvas border border-line rounded-md text-xs tnum focus:outline-none focus:ring-2 focus:ring-oso-300"
+                          className="w-12 px-1.5 py-1 rounded-md text-xs tnum text-white bg-white/10 border border-white/25 focus:outline-none focus:ring-2 focus:ring-white/40"
                         />
                       </label>
                     )}
                     <div className="flex gap-1">
                       <button onClick={irAHoy}
-                        className="px-3 py-1 bg-canvas border border-line rounded-lg text-xs hover:bg-oso-50">Hoy</button>
+                        className="px-3 py-1 rounded-lg text-xs text-white/90 border border-white/25 hover:bg-white/10 transition-colors">Hoy</button>
                       <button onClick={() => moverMes(-1)} aria-label="Mes anterior"
-                        className="px-2.5 py-1 bg-canvas border border-line rounded-lg text-sm hover:bg-oso-50">‹</button>
+                        className="px-2.5 py-1 rounded-lg text-sm text-white/90 border border-white/25 hover:bg-white/10 transition-colors">‹</button>
                       <button onClick={() => moverMes(1)} aria-label="Mes siguiente"
-                        className="px-2.5 py-1 bg-canvas border border-line rounded-lg text-sm hover:bg-oso-50">›</button>
+                        className="px-2.5 py-1 rounded-lg text-sm text-white/90 border border-white/25 hover:bg-white/10 transition-colors">›</button>
                     </div>
                   </div>
                 </div>
@@ -664,13 +701,14 @@ export default function Agenda({ session }: { session: Session }) {
                   <div className="min-w-[640px]">
                     <div className="grid grid-cols-7 gap-px mb-px">
                       {DIAS_CORTOS.map((d, i) => (
-                        <div key={i} className="text-center text-[10px] uppercase tracking-wider text-mute py-1">{d}</div>
+                        <div key={i} className="text-center text-[10px] uppercase tracking-[0.15em] text-white/70 py-1 font-medium">{d}</div>
                       ))}
                     </div>
 
-                    <div className="grid grid-cols-7 gap-px bg-slate-200 rounded-lg overflow-hidden">
+                    <div className="grid grid-cols-7 gap-px rounded-xl overflow-hidden"
+                      style={{ background: VINO.linea }}>
                       {grilla.map((fecha, i) => {
-                        if (!fecha) return <div key={`v${i}`} className="bg-slate-50/70 min-h-[104px]" />
+                        if (!fecha) return <div key={`v${i}`} className="min-h-[104px]" style={{ background: VINO.vacio }} />
                         const dia = Number(fecha.slice(8))
                         const dow = new Date(vista.anio, vista.mes, dia).getDay()
                         const cerradoSemana = diasSemana[dow] === true
@@ -687,9 +725,10 @@ export default function Agenda({ session }: { session: Session }) {
                             tabIndex={0}
                             onClick={() => { setDiaSel(fecha); setTramo({ desde: '', hasta: '', motivo: '' }) }}
                             onKeyDown={ev => { if (ev.key === 'Enter') { setDiaSel(fecha); setTramo({ desde: '', hasta: '', motivo: '' }) } }}
-                            className={`group relative text-left align-top min-h-[104px] p-1.5 transition-colors cursor-pointer ${
-                              cerradoSemana ? tinte.celdaCerrada : tinte.celda
-                            } ${diaSel === fecha ? 'ring-2 ring-inset ring-oso-600' : ''}`}
+                            style={{ background: cerradoSemana ? tinte.celdaCerrada : tinte.celda }}
+                            className={`group relative text-left align-top min-h-[104px] p-1.5 transition-colors cursor-pointer hover:brightness-110 ${
+                              diaSel === fecha ? 'ring-2 ring-inset ring-white/70' : ''
+                            }`}
                           >
                             {capas.disponibilidad && (() => {
                               const est = estadosDia.get(fecha) ?? 'disponible'
@@ -699,14 +738,14 @@ export default function Agenda({ session }: { session: Session }) {
                               if (est === 'sin_atencion') return null
 
                               const pinta = {
-                                cerrado:    { Icono: IconProhibido, color: 'text-red-500/85',     titulo: 'Día cerrado' },
-                                sin_cupo:   { Icono: IconProhibido, color: 'text-red-500/85',     titulo: 'Sin cupo' },
-                                casi:       { Icono: IconAlerta,    color: 'text-amber-500/90',   titulo: `Cupo casi lleno — ${entregasPorDia.get(fecha) ?? 0} entrega(s)` },
-                                disponible: { Icono: IconCheck,     color: 'text-emerald-600/70', titulo: 'Hay cupo' },
+                                cerrado:    { Icono: IconProhibido, color: 'text-white/80', titulo: 'Día cerrado' },
+                                sin_cupo:   { Icono: IconProhibido, color: 'text-white/80', titulo: 'Sin cupo' },
+                                casi:       { Icono: IconAlerta,    color: 'text-white/80', titulo: `Cupo casi lleno — ${entregasPorDia.get(fecha) ?? 0} entrega(s)` },
+                                disponible: { Icono: IconCheck,     color: 'text-white/75', titulo: 'Hay cupo' },
                               }[est]
 
                               return (
-                                <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none transition-opacity duration-150 group-hover:opacity-20"
+                                <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none transition-opacity duration-150 group-hover:opacity-15"
                                   title={pinta.titulo}>
                                   <pinta.Icono className={`w-15 h-15 sm:w-16 sm:h-16 ${pinta.color}`} />
                                 </div>
@@ -714,19 +753,24 @@ export default function Agenda({ session }: { session: Session }) {
                             })()}
 
                             <div className="flex items-center justify-between mb-1 relative z-10">
-                              <span className={`text-xs tnum ${
-                                esHoy ? 'bg-oso-600 text-white rounded-full w-5 h-5 grid place-items-center font-semibold'
-                                      : cerradoSemana ? 'text-mute' : 'text-ink'
-                              }`}>{dia}</span>
-                              {resto > 0 && <span className="text-[9px] text-mute">+{resto}</span>}
+                              <span
+                                className="text-[11px] tnum font-semibold rounded-[3px] px-1 min-w-[18px] text-center"
+                                style={esHoy
+                                  ? { background: '#E9C79E', color: VINO.fondo }
+                                  : { background: 'rgba(255,255,255,0.92)', color: VINO.fondo,
+                                      opacity: cerradoSemana ? 0.55 : 1 }}
+                              >{dia}</span>
+                              {resto > 0 && <span className="text-[9px] text-white/60">+{resto}</span>}
                             </div>
 
                             <div className="space-y-0.5 relative z-10">
                               {visibles.map((e, k) => (
                                 <div key={k}
                                   onClick={ev => { ev.stopPropagation(); setEventoModal(e) }}
-                                  className={`flex items-center gap-1 rounded px-1 py-0.5 text-[10px] leading-tight border cursor-pointer hover:brightness-95 ${CAPAS[e.capa].chip}`}>
-                                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${CAPAS[e.capa].punto}`} />
+                                  style={{ background: 'rgba(255,255,255,0.13)', borderColor: 'rgba(255,255,255,0.22)' }}
+                                  className="flex items-center gap-1 rounded px-1 py-0.5 text-[10px] leading-tight border cursor-pointer text-white hover:bg-white/25 transition-colors">
+                                  <span className="w-1.5 h-1.5 rounded-full shrink-0"
+                                    style={{ background: CAPA_COLOR[e.capa].hex }} />
                                   {e.hora && <span className="tnum shrink-0">{horaCorta(e.hora)}</span>}
                                   <span className="truncate">
                                     {e.personalizado && <span title="Torta personalizada">✦ </span>}
@@ -742,20 +786,18 @@ export default function Agenda({ session }: { session: Session }) {
                   </div>
                 </div>
 
-                <div className="flex gap-4 mt-3 text-[11px] text-mute flex-wrap">
-                  <span className="flex items-center gap-1">✦ torta personalizada</span>
-                  <span className="flex items-center gap-1">
-                    <IconCheck className="w-3.5 h-3.5 text-emerald-600/70" /> hay cupo
+                <div className="flex gap-x-5 gap-y-2 mt-3 text-[11px] text-white/75 flex-wrap items-center">
+                  <span className="flex items-center gap-1.5">
+                    <IconCheck className="w-4 h-4 text-white/80" /> Disponible
                   </span>
-                  <span className="flex items-center gap-1">
-                    <IconAlerta className="w-3.5 h-3.5 text-amber-500/90" /> cupo casi lleno ({maxPedidosDia}+ entregas o franjas ocupadas)
+                  <span className="flex items-center gap-1.5">
+                    <IconAlerta className="w-4 h-4 text-white/80" /> Cupo casi lleno
                   </span>
-                  <span className="flex items-center gap-1">
-                    <IconProhibido className="w-3.5 h-3.5 text-red-500/85" /> cerrado o sin cupo
+                  <span className="flex items-center gap-1.5">
+                    <IconProhibido className="w-4 h-4 text-white/80" /> Sin cupo
                   </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-2.5 h-2.5 rounded bg-canvas border border-line inline-block" /> sin atención
-                  </span>
+                  <span className="flex items-center gap-1.5">✦ personalizada</span>
+                </div>
                 </div>
 
                 {/* Detalle del día */}
