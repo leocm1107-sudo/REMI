@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import NumerosBloqueados from '../components/NumerosBloqueados'
+import GoogleCalendar from '../components/GoogleCalendar'
 
 type ConfigForm = {
   nombre: string
@@ -33,6 +34,8 @@ export default function Configuracion({ session: _session }: { session: Session 
   const [noAutorizado, setNoAutorizado] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado]   = useState(false)
+  const [ubicando, setUbicando]   = useState(false)
+  const [avisoMapa, setAvisoMapa] = useState<{ ok: boolean; texto: string } | null>(null)
 
   useEffect(() => {
     let activo = true
@@ -75,15 +78,61 @@ export default function Configuracion({ session: _session }: { session: Session 
 
   const hayCambios = JSON.stringify(form) !== JSON.stringify(original)
 
+  // ── La chincheta ────────────────────────────────────────────────────────
+  // La dirección manda: al guardarla se ubica sola en el mapa. Mover la
+  // chincheta (editar lat/lng a mano) NO cambia la dirección, y las
+  // coordenadas puestas a mano nunca se sobreescriben solas.
+  async function ubicarPorDireccion(silencioso = false) {
+    if (!form.direccion.trim()) return null
+    setUbicando(true)
+    if (!silencioso) setAvisoMapa(null)
+
+    const { data, error } = await supabase.functions.invoke('geocodificar', {
+      body: { direccion: form.direccion.trim(), ciudad: form.ciudad.trim() },
+    })
+    setUbicando(false)
+
+    const res = data as any
+    if (error || !res?.ok) {
+      setAvisoMapa({ ok: false, texto: res?.error ?? error?.message ?? 'No se pudo ubicar la dirección.' })
+      return null
+    }
+
+    const lat = String(res.lat), lng = String(res.lng)
+    setForm(f => ({ ...f, lat, lng }))
+    setAvisoMapa({
+      ok: res.exacta,
+      texto: res.exacta
+        ? `Ubicado en ${res.direccion_formateada} (${res.precision}).`
+        : `Ubicación ${res.precision}. Revisá la chincheta en el mapa y ajustá los ` +
+          `números si quedó lejos: de este punto salen todas las tarifas de domicilio.`,
+    })
+    return { lat, lng }
+  }
+
   async function guardar() {
     setGuardando(true)
     setGuardado(false)
+
+    // Si cambió la dirección (o nunca hubo coordenadas) y las coordenadas NO
+    // se tocaron a mano en esta edición, se ubica sola. Lo manual gana.
+    let lat = form.lat, lng = form.lng
+    const coordsAMano = form.lat !== original.lat || form.lng !== original.lng
+    const necesitaUbicar = !coordsAMano
+      && form.direccion.trim() !== ''
+      && (form.direccion !== original.direccion || !form.lat.trim() || !form.lng.trim())
+
+    if (necesitaUbicar) {
+      const p = await ubicarPorDireccion(true)
+      if (p) { lat = p.lat; lng = p.lng }
+    }
+
     const { error } = await supabase.rpc('guardar_config_general', {
       p_nombre:                  form.nombre.trim(),
       p_direccion:               form.direccion.trim() || null,
       p_ciudad:                  form.ciudad.trim() || null,
-      p_lat:                     form.lat.trim() ? Number(form.lat) : null,
-      p_lng:                     form.lng.trim() ? Number(form.lng) : null,
+      p_lat:                     lat.trim() ? Number(lat) : null,
+      p_lng:                     lng.trim() ? Number(lng) : null,
       p_telefono_publico:        form.telefono_publico.trim() || null,
       p_telefono_jefe:           form.telefono_jefe.trim() || null,
       p_domicilio_tarifa_plana:  form.domicilio_tarifa_plana.trim() ? parseInt(form.domicilio_tarifa_plana, 10) : null,
@@ -98,7 +147,8 @@ export default function Configuracion({ session: _session }: { session: Session 
       alert('No se pudo guardar: ' + error.message)
       return
     }
-    setOriginal(form)
+    setOriginal({ ...form, lat, lng })
+    setForm(f => ({ ...f, lat, lng }))
     setGuardado(true)
     setTimeout(() => setGuardado(false), 3000)
   }
@@ -165,9 +215,25 @@ export default function Configuracion({ session: _session }: { session: Session 
               Coordenadas de origen
             </div>
             <p className="text-xs text-mute mb-3 leading-relaxed">
-              El punto desde donde se calcula la distancia a cada cliente. Para obtenerlas:
-              abre Google Maps, haz clic derecho sobre tu restaurante y copia los dos números que aparecen arriba.
+              El punto desde donde se calcula la distancia a cada cliente. Se ubica solo
+              con la dirección que escribiste arriba; si el punto queda corrido, podés
+              ajustar los números a mano y se respeta lo que dejes.
             </p>
+
+            <button
+              type="button"
+              onClick={() => ubicarPorDireccion()}
+              disabled={ubicando || !form.direccion.trim()}
+              className="mb-3 text-xs px-3 py-1.5 rounded-lg bg-oso-100 text-oso-800 hover:bg-oso-200 disabled:opacity-50 transition-colors"
+            >
+              {ubicando ? 'Ubicando…' : 'Ubicar por la dirección'}
+            </button>
+
+            {avisoMapa && (
+              <p className={`text-[11px] mb-3 leading-relaxed ${avisoMapa.ok ? 'text-green-700' : 'text-amber-700'}`}>
+                {avisoMapa.texto}
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <Campo label="Latitud">
                 <input className="input tnum" value={form.lat} onChange={e => set('lat', e.target.value)} placeholder="4.0847" />
@@ -185,6 +251,11 @@ export default function Configuracion({ session: _session }: { session: Session 
                 Ver esta ubicación en el mapa ↗
               </a>
             )}
+            {form.lat && form.lng && (
+              <p className="text-[11px] text-mute mt-1">
+                Abrí el mapa y comprobá que la chincheta caiga sobre el local.
+              </p>
+            )}
           </div>
         </Seccion>
 
@@ -194,6 +265,8 @@ export default function Configuracion({ session: _session }: { session: Session 
             <input className="input tnum" value={form.telefono_jefe} onChange={e => set('telefono_jefe', e.target.value)} placeholder="573001234567" />
           </Campo>
         </Seccion>
+
+        <GoogleCalendar />
 
         <NumerosBloqueados />
 
