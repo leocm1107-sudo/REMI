@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import Festivos from '../components/Festivos'
 
 type DiaHorario = { abierto: boolean; abre: string; cierra: string }
 
@@ -204,6 +205,8 @@ export default function Horarios({ session: _s }: { session: Session }) {
       <p className="text-xs text-mute mt-4">
         El bot usa estos horarios para saber si está abierto o cerrado y avisar a los clientes cuando corresponda.
       </p>
+
+      <Festivos />
     </div>
   )
 }

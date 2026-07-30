@@ -5,6 +5,7 @@ import { cn, formatCOP } from '../lib/utils'
 import type { Plato, Categoria, PerfilUsuario } from '../lib/types'
 import PlatoEditor from '../components/PlatoEditor'
 import SaboresDelDia from '../components/SaboresDelDia'
+import ConfigCategorias from '../components/ConfigCategorias'
 
 type Sabor = { nombre: string; disponible: boolean }
 
@@ -261,6 +262,12 @@ export default function Menu({ session }: { session: Session }) {
               </section>
             )
           })}
+        </div>
+      )}
+
+      {esDueno && (
+        <div className="mt-10">
+          <ConfigCategorias />
         </div>
       )}
 
