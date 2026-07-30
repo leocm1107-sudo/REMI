@@ -620,23 +620,23 @@ export default function Agenda({ session }: { session: Session }) {
                             tabIndex={0}
                             onClick={() => { setDiaSel(fecha); setTramo({ desde: '', hasta: '', motivo: '' }) }}
                             onKeyDown={ev => { if (ev.key === 'Enter') { setDiaSel(fecha); setTramo({ desde: '', hasta: '', motivo: '' }) } }}
-                            className={`relative text-left align-top min-h-[104px] p-1.5 transition-colors cursor-pointer ${
+                            className={`group relative text-left align-top min-h-[104px] p-1.5 transition-colors cursor-pointer ${
                               cerradoSemana ? tinte.celdaCerrada : tinte.celda
                             } ${diaSel === fecha ? 'ring-2 ring-inset ring-oso-600' : ''}`}
                           >
                             {full && (
-                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                <IconProhibido className="w-9 h-9 sm:w-10 sm:h-10 text-red-500/85" />
+                              <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none transition-opacity duration-150 group-hover:opacity-20">
+                                <IconProhibido className="w-11 h-11 sm:w-12 sm:h-12 text-red-500/85" />
                               </div>
                             )}
                             {saturado && (
-                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                              <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none transition-opacity duration-150 group-hover:opacity-20"
                                 title={`${entregasPorDia.get(fecha) ?? 0} entregas — día saturado`}>
-                                <IconAlerta className="w-9 h-9 sm:w-10 sm:h-10 text-amber-500/90" />
+                                <IconAlerta className="w-11 h-11 sm:w-12 sm:h-12 text-amber-500/90" />
                               </div>
                             )}
 
-                            <div className="flex items-center justify-between mb-1 relative">
+                            <div className="flex items-center justify-between mb-1 relative z-10">
                               <span className={`text-xs tnum ${
                                 esHoy ? 'bg-oso-600 text-white rounded-full w-5 h-5 grid place-items-center font-semibold'
                                       : cerradoSemana ? 'text-mute' : 'text-ink'
@@ -644,7 +644,7 @@ export default function Agenda({ session }: { session: Session }) {
                               {resto > 0 && <span className="text-[9px] text-mute">+{resto}</span>}
                             </div>
 
-                            <div className="space-y-0.5 relative">
+                            <div className="space-y-0.5 relative z-10">
                               {visibles.map((e, k) => (
                                 <div key={k}
                                   onClick={ev => { ev.stopPropagation(); setEventoModal(e) }}
