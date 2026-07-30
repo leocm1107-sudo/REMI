@@ -119,8 +119,24 @@ const inputCls =
 // Raya de esquina a esquina para los días cerrados
 const TACHADO = {
   backgroundImage:
-    'linear-gradient(to top right, transparent calc(50% - 0.5px), rgb(248 113 113 / 0.75) calc(50% - 0.5px), rgb(248 113 113 / 0.75) calc(50% + 0.5px), transparent calc(50% + 0.5px))',
+    'linear-gradient(to top right, transparent calc(50% - 3px), rgb(239 68 68 / 0.85) calc(50% - 3px), rgb(239 68 68 / 0.85) calc(50% + 3px), transparent calc(50% + 3px))',
 }
+
+// Un color "tenue" de fondo por capa (y por combinación de dos capas), para
+// teñir todo el calendario cuando el filtro deja solo una o dos cosas
+// encendidas — como si fuera un calendario de Google con una sola agenda
+// activa. Con 0 o 3 capas encendidas no hay tinte: el calendario vuelve al
+// blanco/gris "tipo calendario" de siempre.
+const TINTES: Record<string, { seccion: string; celda: string; celdaCerrada: string }> = {
+  entrega:            { seccion: 'bg-oso-50/70',     celda: 'bg-oso-50/40 hover:bg-oso-100/60',         celdaCerrada: 'bg-oso-100/50' },
+  revision:           { seccion: 'bg-violet-50/70',  celda: 'bg-violet-50/40 hover:bg-violet-100/60',   celdaCerrada: 'bg-violet-100/50' },
+  bloqueo:            { seccion: 'bg-red-50/70',     celda: 'bg-red-50/40 hover:bg-red-100/60',         celdaCerrada: 'bg-red-100/50' },
+  'entrega-revision': { seccion: 'bg-fuchsia-50/70', celda: 'bg-fuchsia-50/40 hover:bg-fuchsia-100/60', celdaCerrada: 'bg-fuchsia-100/50' },
+  'entrega-bloqueo':  { seccion: 'bg-orange-50/70',  celda: 'bg-orange-50/40 hover:bg-orange-100/60',   celdaCerrada: 'bg-orange-100/50' },
+  'revision-bloqueo': { seccion: 'bg-pink-50/70',    celda: 'bg-pink-50/40 hover:bg-pink-100/60',       celdaCerrada: 'bg-pink-100/50' },
+}
+// Sin tinte: el "color tipo calendario" original — blanco y gris, como Google Calendar
+const SIN_TINTE = { seccion: 'bg-white', celda: 'bg-white hover:bg-slate-50', celdaCerrada: 'bg-slate-50' }
 
 export default function Agenda({ session }: { session: Session }) {
   const [tab, setTab] = useState<'agenda' | 'slots'>('agenda')
@@ -142,6 +158,7 @@ export default function Agenda({ session }: { session: Session }) {
   const [vista, setVista] = useState({ anio: hoy.getFullYear(), mes: hoy.getMonth() })
   const [diaSel, setDiaSel] = useState<string | null>(null)
   const [tramo, setTramo] = useState({ desde: '', hasta: '', motivo: '' })
+  const [eventoModal, setEventoModal] = useState<Evento | null>(null)
 
   async function cargar() {
     setCargando(true)
@@ -342,6 +359,27 @@ export default function Agenda({ session }: { session: Session }) {
     cargarConfig()
   }
 
+  // Qué tinte usar según cuántas y cuáles capas están encendidas
+  const tinte = useMemo(() => {
+    const activas = (['entrega', 'revision', 'bloqueo'] as Capa[]).filter(c => capas[c])
+    if (activas.length === 0 || activas.length === 3) return SIN_TINTE
+    if (activas.length === 1) return TINTES[activas[0]]
+    if (capas.entrega && capas.revision) return TINTES['entrega-revision']
+    if (capas.entrega && capas.bloqueo) return TINTES['entrega-bloqueo']
+    return TINTES['revision-bloqueo']
+  }, [capas])
+
+  async function eliminarEvento(e: Evento) {
+    if (e.cita) {
+      if (!confirm('¿Cancelar esta cita?')) return
+      await cambiarEstado(e.cita.id, 'cancelada')
+    } else if (e.bloqueo) {
+      if (!confirm('¿Quitar este bloqueo?')) return
+      await quitarBloqueo(e.bloqueo.id)
+    }
+    setEventoModal(null)
+  }
+
   const grilla = useMemo(() => {
     const primerDia = new Date(vista.anio, vista.mes, 1).getDay()
     const total = new Date(vista.anio, vista.mes + 1, 0).getDate()
@@ -437,7 +475,7 @@ export default function Agenda({ session }: { session: Session }) {
             <p className="text-center text-mute py-20 text-sm">Cargando agenda…</p>
           ) : modo === 'calendario' ? (
             <>
-              <section className="bg-surface border border-line rounded-xl p-4 sm:p-5">
+              <section className={`border border-line rounded-xl p-4 sm:p-5 transition-colors ${tinte.seccion}`}>
                 <div className="flex items-center justify-between mb-4 gap-3">
                   <h2 className="font-display text-xl font-semibold tracking-tight capitalize">
                     {MESES[vista.mes]} {vista.anio}
@@ -460,9 +498,9 @@ export default function Agenda({ session }: { session: Session }) {
                       ))}
                     </div>
 
-                    <div className="grid grid-cols-7 gap-px bg-line rounded-lg overflow-hidden">
+                    <div className="grid grid-cols-7 gap-px bg-slate-200 rounded-lg overflow-hidden">
                       {grilla.map((fecha, i) => {
-                        if (!fecha) return <div key={`v${i}`} className="bg-canvas/40 min-h-[104px]" />
+                        if (!fecha) return <div key={`v${i}`} className="bg-slate-50/70 min-h-[104px]" />
                         const dia = Number(fecha.slice(8))
                         const dow = new Date(vista.anio, vista.mes, dia).getDay()
                         const cerradoSemana = diasSemana[dow] === true
@@ -473,12 +511,15 @@ export default function Agenda({ session }: { session: Session }) {
                         const resto = delDia.length - visibles.length
 
                         return (
-                          <button
+                          <div
                             key={fecha}
+                            role="button"
+                            tabIndex={0}
                             onClick={() => { setDiaSel(fecha); setTramo({ desde: '', hasta: '', motivo: '' }) }}
+                            onKeyDown={ev => { if (ev.key === 'Enter') { setDiaSel(fecha); setTramo({ desde: '', hasta: '', motivo: '' }) } }}
                             style={full ? TACHADO : undefined}
-                            className={`relative text-left align-top min-h-[104px] p-1.5 transition-colors ${
-                              cerradoSemana ? 'bg-canvas/70' : 'bg-surface hover:bg-oso-50/60'
+                            className={`relative text-left align-top min-h-[104px] p-1.5 transition-colors cursor-pointer ${
+                              cerradoSemana ? tinte.celdaCerrada : tinte.celda
                             } ${diaSel === fecha ? 'ring-2 ring-inset ring-oso-600' : ''}`}
                           >
                             <div className="flex items-center justify-between mb-1">
@@ -492,7 +533,8 @@ export default function Agenda({ session }: { session: Session }) {
                             <div className="space-y-0.5">
                               {visibles.map((e, k) => (
                                 <div key={k}
-                                  className={`flex items-center gap-1 rounded px-1 py-0.5 text-[10px] leading-tight border ${CAPAS[e.capa].chip}`}>
+                                  onClick={ev => { ev.stopPropagation(); setEventoModal(e) }}
+                                  className={`flex items-center gap-1 rounded px-1 py-0.5 text-[10px] leading-tight border cursor-pointer hover:brightness-95 ${CAPAS[e.capa].chip}`}>
                                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${CAPAS[e.capa].punto}`} />
                                   {e.hora && <span className="tnum shrink-0">{horaCorta(e.hora)}</span>}
                                   <span className="truncate">
@@ -502,7 +544,7 @@ export default function Agenda({ session }: { session: Session }) {
                                 </div>
                               ))}
                             </div>
-                          </button>
+                          </div>
                         )
                       })}
                     </div>
@@ -527,7 +569,9 @@ export default function Agenda({ session }: { session: Session }) {
                     {(porDia.get(diaSel) ?? []).length > 0 && (
                       <div className="space-y-1.5 mb-4">
                         {(porDia.get(diaSel) ?? []).map((e, k) => (
-                          <div key={k} className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs border ${CAPAS[e.capa].chip}`}>
+                          <div key={k}
+                            onClick={() => setEventoModal(e)}
+                            className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs border cursor-pointer hover:brightness-95 transition-[filter] ${CAPAS[e.capa].chip}`}>
                             <span className={`w-2 h-2 rounded-full shrink-0 ${CAPAS[e.capa].punto}`} />
                             {e.hora && <span className="tnum shrink-0">{hhmm(e.hora)}</span>}
                             <span className="flex-1 truncate">
@@ -671,6 +715,16 @@ export default function Agenda({ session }: { session: Session }) {
                 ))}
               </div>
             )
+          )}
+
+          {eventoModal && (
+            <ModalDetalleEvento
+              evento={eventoModal}
+              esDueno={esDueno}
+              onCerrar={() => setEventoModal(null)}
+              onEliminar={() => eliminarEvento(eventoModal)}
+              onEstado={estado => { cambiarEstado(eventoModal.cita!.id, estado); setEventoModal(null) }}
+            />
           )}
         </>
       )}
@@ -832,6 +886,127 @@ function TarjetaCita({ c, personalizado, onEstado }: {
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Modal de detalle de un evento del calendario, al estilo del popup de
+// Google Calendar: ficha con los datos y la opción de eliminar ──
+function ModalDetalleEvento({ evento, esDueno, onCerrar, onEliminar, onEstado }: {
+  evento: Evento
+  esDueno: boolean
+  onCerrar: () => void
+  onEliminar: () => void
+  onEstado: (estado: Cita['estado']) => void
+}) {
+  const c = evento.cita
+  const b = evento.bloqueo
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onCerrar}>
+      <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className={`h-1.5 ${CAPAS[evento.capa].punto}`} />
+
+        <div className="p-5">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${CAPAS[evento.capa].punto}`} />
+              <h3 className="font-display text-lg font-semibold tracking-tight">
+                {evento.capa === 'revision' ? 'Revisión' : evento.capa === 'entrega' ? 'Entrega' : 'Bloqueo'}
+              </h3>
+              {evento.personalizado && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-800 border border-violet-200">
+                  ✦ personalizada
+                </span>
+              )}
+            </div>
+            <button onClick={onCerrar} aria-label="Cerrar" className="text-mute hover:text-ink text-lg leading-none px-1">×</button>
+          </div>
+
+          <div className="space-y-2.5 text-sm">
+            <div className="flex items-center gap-2.5">
+              <span className="text-mute w-5 text-center shrink-0">📅</span>
+              <span className="capitalize">{fechaLarga(evento.fecha)}{evento.hora && ` · ${hhmm(evento.hora)}`}</span>
+            </div>
+
+            {c && (
+              <>
+                <div className="flex items-center gap-2.5">
+                  <span className="text-mute w-5 text-center shrink-0">🧾</span>
+                  <span>{c.pedidos?.numero_pedido ?? '—'}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${badge[c.estado]}`}>{c.estado}</span>
+                </div>
+                {c.pedidos?.clientes?.nombre && (
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-mute w-5 text-center shrink-0">👤</span>
+                    <span>{c.pedidos.clientes.nombre}</span>
+                  </div>
+                )}
+                {c.pedidos?.clientes?.telefono && (
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-mute w-5 text-center shrink-0">📞</span>
+                    <span className="tnum">{c.pedidos.clientes.telefono}</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-2.5">
+                  <span className="text-mute w-5 text-center shrink-0">📍</span>
+                  <span>
+                    {c.pedidos?.tipo_entrega === 'domicilio'
+                      ? (c.pedidos?.direccion_entrega || 'Domicilio')
+                      : 'Recoge en el taller'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <span className="text-mute w-5 text-center shrink-0">💰</span>
+                  <span className="tnum font-medium">{formatCOP(c.pedidos?.total ?? 0)}</span>
+                </div>
+                {c.notas && (
+                  <div className="flex items-start gap-2.5">
+                    <span className="text-mute w-5 text-center shrink-0">🕐</span>
+                    <span className="text-mute">{c.notas}</span>
+                  </div>
+                )}
+              </>
+            )}
+
+            {b && (
+              <>
+                <div className="flex items-center gap-2.5">
+                  <span className="text-mute w-5 text-center shrink-0">📝</span>
+                  <span>{evento.etiqueta}</span>
+                </div>
+                {b.origen === 'google' && (
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-mute w-5 text-center shrink-0">🔗</span>
+                    <span className="text-mute text-xs">Sincronizado desde Google Calendar</span>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {esDueno && (
+            <div className="flex flex-wrap gap-2 mt-5 pt-4 border-t border-line">
+              {c && c.estado === 'propuesta' && (
+                <button onClick={() => onEstado('confirmada')}
+                  className="px-3 py-1.5 bg-oso-600 text-white rounded-lg text-xs font-medium hover:bg-oso-700 transition-colors">
+                  Confirmar cita
+                </button>
+              )}
+              {c && c.estado === 'confirmada' && (
+                <button onClick={() => onEstado('cumplida')}
+                  className="px-3 py-1.5 bg-oso-100 text-oso-800 rounded-lg text-xs hover:bg-oso-200 transition-colors">
+                  Marcar cumplida
+                </button>
+              )}
+              <button onClick={onEliminar}
+                className="px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 rounded-lg transition-colors ml-auto">
+                {c ? 'Cancelar cita' : 'Eliminar bloqueo'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
