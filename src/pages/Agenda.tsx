@@ -52,7 +52,7 @@ type Bloqueo = {
   origen: string | null
 }
 
-type Capa = 'entrega' | 'revision' | 'bloqueo'
+type Capa = 'entrega' | 'revision' | 'disponibilidad'
 
 type Evento = {
   capa: Capa
@@ -74,8 +74,12 @@ const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
 const CAPAS: Record<Capa, { nombre: string; punto: string; chip: string; activo: string }> = {
   entrega:  { nombre: 'Entregas',   punto: 'bg-oso-600',    chip: 'bg-oso-50 text-oso-900 border-oso-200',          activo: 'bg-oso-600 text-white border-oso-600' },
   revision: { nombre: 'Revisiones', punto: 'bg-violet-500', chip: 'bg-violet-50 text-violet-900 border-violet-200', activo: 'bg-violet-500 text-white border-violet-500' },
-  bloqueo:  { nombre: 'Bloqueos',   punto: 'bg-red-500',    chip: 'bg-red-50 text-red-900 border-red-200',          activo: 'bg-red-500 text-white border-red-500' },
+  disponibilidad: { nombre: 'Disponibilidad', punto: 'bg-emerald-600', chip: 'bg-red-50 text-red-900 border-red-200', activo: 'bg-emerald-600 text-white border-emerald-600' },
 }
+
+// Estado de cada día para la capa de disponibilidad. Es lo que Angélica
+// publica en su historia: ¿hay cupo, va apretado, o ya no?
+type EstadoDia = 'sin_atencion' | 'cerrado' | 'sin_cupo' | 'casi' | 'disponible'
 
 function fechaLarga(iso: string) {
   const [a, m, d] = iso.split('-').map(Number)
@@ -139,6 +143,18 @@ function IconAlerta({ className }: { className?: string }) {
   )
 }
 
+// Símbolo de "hay cupo" — el mismo check en círculo de la agenda que Angélica
+// publica en sus historias, para que el panel y el cliente hablen igual.
+function IconCheck({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="9.3" stroke="currentColor" strokeWidth="2.4" />
+      <path d="M7.2 12.4 L10.5 15.7 L17.2 8.4" stroke="currentColor" strokeWidth="2.8"
+        strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 // Un color "tenue" de fondo por capa (y por combinación de dos capas), para
 // teñir todo el calendario cuando el filtro deja solo una o dos cosas
 // encendidas — como si fuera un calendario de Google con una sola agenda
@@ -147,10 +163,10 @@ function IconAlerta({ className }: { className?: string }) {
 const TINTES: Record<string, { seccion: string; celda: string; celdaCerrada: string }> = {
   entrega:            { seccion: 'bg-oso-50/70',     celda: 'bg-oso-50/40 hover:bg-oso-100/60',         celdaCerrada: 'bg-oso-100/50' },
   revision:           { seccion: 'bg-violet-50/70',  celda: 'bg-violet-50/40 hover:bg-violet-100/60',   celdaCerrada: 'bg-violet-100/50' },
-  bloqueo:            { seccion: 'bg-red-50/70',     celda: 'bg-red-50/40 hover:bg-red-100/60',         celdaCerrada: 'bg-red-100/50' },
-  'entrega-revision': { seccion: 'bg-fuchsia-50/70', celda: 'bg-fuchsia-50/40 hover:bg-fuchsia-100/60', celdaCerrada: 'bg-fuchsia-100/50' },
-  'entrega-bloqueo':  { seccion: 'bg-orange-50/70',  celda: 'bg-orange-50/40 hover:bg-orange-100/60',   celdaCerrada: 'bg-orange-100/50' },
-  'revision-bloqueo': { seccion: 'bg-pink-50/70',    celda: 'bg-pink-50/40 hover:bg-pink-100/60',       celdaCerrada: 'bg-pink-100/50' },
+  disponibilidad:            { seccion: 'bg-emerald-50/70', celda: 'bg-emerald-50/40 hover:bg-emerald-100/60', celdaCerrada: 'bg-emerald-100/50' },
+  'entrega-revision':        { seccion: 'bg-fuchsia-50/70', celda: 'bg-fuchsia-50/40 hover:bg-fuchsia-100/60', celdaCerrada: 'bg-fuchsia-100/50' },
+  'entrega-disponibilidad':  { seccion: 'bg-amber-50/70',   celda: 'bg-amber-50/40 hover:bg-amber-100/60',     celdaCerrada: 'bg-amber-100/50' },
+  'revision-disponibilidad': { seccion: 'bg-sky-50/70',     celda: 'bg-sky-50/40 hover:bg-sky-100/60',         celdaCerrada: 'bg-sky-100/50' },
 }
 // Sin tinte: el "color tipo calendario" original — blanco y gris, como Google Calendar
 const SIN_TINTE = { seccion: 'bg-white', celda: 'bg-white hover:bg-slate-50', celdaCerrada: 'bg-slate-50' }
@@ -163,7 +179,7 @@ export default function Agenda({ session }: { session: Session }) {
 
   const [citas, setCitas] = useState<Cita[]>([])
   const [cargando, setCargando] = useState(true)
-  const [capas, setCapas] = useState<Record<Capa, boolean>>({ entrega: true, revision: true, bloqueo: true })
+  const [capas, setCapas] = useState<Record<Capa, boolean>>({ entrega: true, revision: true, disponibilidad: true })
 
   // Sub-filtro de entregas: normales, personalizadas o todas. Se abre con la
   // flechita del chip "Entregas".
@@ -228,8 +244,11 @@ export default function Agenda({ session }: { session: Session }) {
   }, [session.user.id])
 
   useEffect(() => {
-    const canal = supabase.channel('citas-agenda')
+    // Escuchamos citas Y bloqueos: así lo que el sync trae de Google Calendar
+    // (o lo que se bloquee desde otro dispositivo) aparece sin recargar.
+    const canal = supabase.channel('agenda-viva')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'citas' }, cargar)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dias_bloqueados' }, cargarConfig)
       .subscribe()
     return () => { supabase.removeChannel(canal) }
   }, [])
@@ -263,7 +282,7 @@ export default function Agenda({ session }: { session: Session }) {
       })
     }
 
-    if (capas.bloqueo) {
+    if (capas.disponibilidad) {
       for (const b of bloqueos) {
         const desc = b.slot_id
           ? `Franja ${slots.find(s => s.id === b.slot_id)?.etiqueta ?? ''}`
@@ -271,7 +290,7 @@ export default function Agenda({ session }: { session: Session }) {
             ? `${hhmm(b.hora_desde)}–${hhmm(b.hora_hasta)}`
             : 'Día cerrado'
         out.push({
-          capa: 'bloqueo',
+          capa: 'disponibilidad',
           fecha: b.fecha,
           hora: b.hora_desde,
           etiqueta: b.motivo ? `${desc} · ${b.motivo}` : desc,
@@ -305,7 +324,60 @@ export default function Agenda({ session }: { session: Session }) {
     }
     return m
   }, [citas])
+  const grilla = useMemo(() => {
+    const primerDia = new Date(vista.anio, vista.mes, 1).getDay()
+    const total = new Date(vista.anio, vista.mes + 1, 0).getDate()
+    const celdas: (string | null)[] = Array(primerDia).fill(null)
+    for (let d = 1; d <= total; d++) celdas.push(isoDe(vista.anio, vista.mes, d))
+    while (celdas.length % 7 !== 0) celdas.push(null)
+    return celdas
+  }, [vista])
+
   const diaSaturado = (fecha: string) => (entregasPorDia.get(fecha) ?? 0) >= maxPedidosDia
+
+  // ── Disponibilidad real de cada día ──────────────────────────────────────
+  // Mira todo lo que puede quitar cupo: día cerrado, día sin atención por
+  // horario, franjas desactivadas en la planilla, franjas apagadas para esa
+  // fecha, tramos de horas ocupados (incluidos los que llegan de Google
+  // Calendar) y el cupo_max de cada franja contra las entregas ya agendadas.
+  function estadoDelDia(fecha: string): EstadoDia {
+    const dow = new Date(`${fecha}T12:00:00`).getDay()
+    if (diasSemana[dow] === true) return 'sin_atencion'
+    if (bloqueoDiaCompleto(fecha)) return 'cerrado'
+
+    const delDia = bloqueos.filter(b => b.fecha === fecha)
+    // Solo las franjas encendidas en la planilla cuentan como capacidad
+    const activas = slots.filter(s => s.activo)
+    if (activas.length === 0) return 'sin_atencion'
+
+    const libres = activas.filter(s => {
+      if (delDia.some(b => b.slot_id === s.id)) return false
+      const h = hhmm(s.hora)
+      // Un tramo bloqueado se come las franjas que caen dentro
+      return !delDia.some(b => b.hora_desde && h >= hhmm(b.hora_desde) && h < hhmm(b.hora_hasta))
+    })
+    if (libres.length === 0) return 'sin_cupo'
+
+    const entregas = entregasPorDia.get(fecha) ?? 0
+
+    // Si TODAS las franjas libres tienen cupo definido, se puede medir de verdad
+    if (libres.every(s => s.cupo_max != null)) {
+      const capacidad = libres.reduce((a, s) => a + (s.cupo_max ?? 0), 0)
+      if (entregas >= capacidad) return 'sin_cupo'
+      if (entregas >= capacidad * 0.7) return 'casi'
+    }
+
+    if (entregas >= maxPedidosDia) return 'casi'
+    if (libres.length < activas.length) return 'casi'   // quedó alguna franja ocupada
+    return 'disponible'
+  }
+
+  const estadosDia = useMemo(() => {
+    const m = new Map<string, EstadoDia>()
+    for (const f of grilla) if (f) m.set(f, estadoDelDia(f))
+    return m
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grilla, bloqueos, slots, diasSemana, entregasPorDia, maxPedidosDia])
 
   // La lista solo mira de hoy en adelante: es una agenda de trabajo, no un histórico
   const listaFutura = useMemo(() => {
@@ -404,12 +476,12 @@ export default function Agenda({ session }: { session: Session }) {
 
   // Qué tinte usar según cuántas y cuáles capas están encendidas
   const tinte = useMemo(() => {
-    const activas = (['entrega', 'revision', 'bloqueo'] as Capa[]).filter(c => capas[c])
+    const activas = (['entrega', 'revision', 'disponibilidad'] as Capa[]).filter(c => capas[c])
     if (activas.length === 0 || activas.length === 3) return SIN_TINTE
     if (activas.length === 1) return TINTES[activas[0]]
     if (capas.entrega && capas.revision) return TINTES['entrega-revision']
-    if (capas.entrega && capas.bloqueo) return TINTES['entrega-bloqueo']
-    return TINTES['revision-bloqueo']
+    if (capas.entrega && capas.disponibilidad) return TINTES['entrega-disponibilidad']
+    return TINTES['revision-disponibilidad']
   }, [capas])
 
   async function eliminarEvento(e: Evento) {
@@ -422,15 +494,6 @@ export default function Agenda({ session }: { session: Session }) {
     }
     setEventoModal(null)
   }
-
-  const grilla = useMemo(() => {
-    const primerDia = new Date(vista.anio, vista.mes, 1).getDay()
-    const total = new Date(vista.anio, vista.mes + 1, 0).getDate()
-    const celdas: (string | null)[] = Array(primerDia).fill(null)
-    for (let d = 1; d <= total; d++) celdas.push(isoDe(vista.anio, vista.mes, d))
-    while (celdas.length % 7 !== 0) celdas.push(null)
-    return celdas
-  }, [vista])
 
   function moverMes(delta: number) {
     setVista(v => {
@@ -607,7 +670,6 @@ export default function Agenda({ session }: { session: Session }) {
                         const dow = new Date(vista.anio, vista.mes, dia).getDay()
                         const cerradoSemana = diasSemana[dow] === true
                         const full = !!bloqueoDiaCompleto(fecha)
-                        const saturado = !full && diaSaturado(fecha)
                         const esHoy = fecha === hoyISO()
                         const delDia = porDia.get(fecha) ?? []
                         const visibles = delDia.slice(0, 3)
@@ -624,17 +686,27 @@ export default function Agenda({ session }: { session: Session }) {
                               cerradoSemana ? tinte.celdaCerrada : tinte.celda
                             } ${diaSel === fecha ? 'ring-2 ring-inset ring-oso-600' : ''}`}
                           >
-                            {full && (
-                              <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none transition-opacity duration-150 group-hover:opacity-20">
-                                <IconProhibido className="w-15 h-15 sm:w-16 sm:h-16 text-red-500/85" />
-                              </div>
-                            )}
-                            {saturado && (
-                              <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none transition-opacity duration-150 group-hover:opacity-20"
-                                title={`${entregasPorDia.get(fecha) ?? 0} entregas — día saturado`}>
-                                <IconAlerta className="w-15 h-15 sm:w-16 sm:h-16 text-amber-500/90" />
-                              </div>
-                            )}
+                            {capas.disponibilidad && (() => {
+                              const est = estadosDia.get(fecha) ?? 'disponible'
+                              // El check solo de hoy en adelante: llenar el pasado
+                              // de visto buenos es ruido, no información.
+                              if (est === 'disponible' && fecha < hoyISO()) return null
+                              if (est === 'sin_atencion') return null
+
+                              const pinta = {
+                                cerrado:    { Icono: IconProhibido, color: 'text-red-500/85',     titulo: 'Día cerrado' },
+                                sin_cupo:   { Icono: IconProhibido, color: 'text-red-500/85',     titulo: 'Sin cupo' },
+                                casi:       { Icono: IconAlerta,    color: 'text-amber-500/90',   titulo: `Cupo casi lleno — ${entregasPorDia.get(fecha) ?? 0} entrega(s)` },
+                                disponible: { Icono: IconCheck,     color: 'text-emerald-600/70', titulo: 'Hay cupo' },
+                              }[est]
+
+                              return (
+                                <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none transition-opacity duration-150 group-hover:opacity-20"
+                                  title={pinta.titulo}>
+                                  <pinta.Icono className={`w-15 h-15 sm:w-16 sm:h-16 ${pinta.color}`} />
+                                </div>
+                              )
+                            })()}
 
                             <div className="flex items-center justify-between mb-1 relative z-10">
                               <span className={`text-xs tnum ${
@@ -668,10 +740,13 @@ export default function Agenda({ session }: { session: Session }) {
                 <div className="flex gap-4 mt-3 text-[11px] text-mute flex-wrap">
                   <span className="flex items-center gap-1">✦ torta personalizada</span>
                   <span className="flex items-center gap-1">
-                    <IconProhibido className="w-3.5 h-3.5 text-red-500/85" /> día cerrado
+                    <IconCheck className="w-3.5 h-3.5 text-emerald-600/70" /> hay cupo
                   </span>
                   <span className="flex items-center gap-1">
-                    <IconAlerta className="w-3.5 h-3.5 text-amber-500/90" /> día saturado ({maxPedidosDia}+ entregas)
+                    <IconAlerta className="w-3.5 h-3.5 text-amber-500/90" /> cupo casi lleno ({maxPedidosDia}+ entregas o franjas ocupadas)
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <IconProhibido className="w-3.5 h-3.5 text-red-500/85" /> cerrado o sin cupo
                   </span>
                   <span className="flex items-center gap-1">
                     <span className="w-2.5 h-2.5 rounded bg-canvas border border-line inline-block" /> sin atención
@@ -815,7 +890,7 @@ export default function Agenda({ session }: { session: Session }) {
                           <TarjetaCita key={e.cita.id} c={e.cita} personalizado={e.personalizado} onEstado={cambiarEstado} />
                         ) : (
                           <div key={`b${k}`} className="bg-surface border border-line rounded-xl p-3 flex items-center gap-2.5">
-                            <span className={`w-2 h-2 rounded-full shrink-0 ${CAPAS.bloqueo.punto}`} />
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${CAPAS.disponibilidad.punto}`} />
                             <span className="text-sm flex-1">{e.etiqueta}</span>
                             {e.bloqueo?.origen === 'google' && (
                               <span className="text-[10px] text-mute">Google Calendar</span>
