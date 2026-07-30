@@ -6,6 +6,19 @@ import type { Plato, Categoria, PerfilUsuario } from '../lib/types'
 import PlatoEditor from '../components/PlatoEditor'
 import SaboresDelDia from '../components/SaboresDelDia'
 
+type Sabor = { nombre: string; disponible: boolean }
+
+// Los sabores pueden venir como strings sueltos (formato viejo) o como
+// objetos. Se normaliza para que la tarjeta no tenga que preocuparse.
+function normalizarSabores(raw: unknown): Sabor[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((s: any) => typeof s === 'string'
+      ? { nombre: s, disponible: true }
+      : { nombre: String(s?.nombre ?? '').trim(), disponible: s?.disponible !== false })
+    .filter(s => s.nombre)
+}
+
 type FotoGaleria = {
   id: string
   plato_id: string
@@ -136,6 +149,20 @@ export default function Menu({ session }: { session: Session }) {
     if (f.data) setFotos(f.data as FotoGaleria[])
   }
 
+  // Sabor del día desde la tarjeta: mismo comportamiento que la sección de
+  // arriba, pero sin tener que subir a buscar el producto.
+  async function guardarSabores(plato: Plato, patch: { usa_sabores_dia?: boolean; sabores?: Sabor[] }) {
+    const previo = platos
+    setPlatos(prev => prev.map(p => p.id === plato.id ? { ...p, ...patch } as Plato : p))
+    const { error } = await supabase.from('platos')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('id', plato.id)
+    if (error) {
+      setPlatos(previo)
+      alert('No se pudo guardar el sabor: ' + error.message)
+    }
+  }
+
   async function toggleDisponible(plato: Plato) {
     // Optimista
     setPlatos(prev => prev.map(p =>
@@ -227,6 +254,7 @@ export default function Menu({ session }: { session: Session }) {
                       esDueno={esDueno}
                       onToggle={() => toggleDisponible(plato)}
                       onEdit={() => setEditando(plato)}
+                      onSabores={patch => guardarSabores(plato, patch)}
                     />
                   ))}
                 </div>
@@ -248,14 +276,29 @@ export default function Menu({ session }: { session: Session }) {
 }
 
 function PlatoCard({
-  plato, fotos, esDueno, onToggle, onEdit
+  plato, fotos, esDueno, onToggle, onEdit, onSabores
 }: {
   plato: Plato
   fotos: FotoGaleria[]
   esDueno: boolean
   onToggle: () => void
   onEdit: () => void
+  onSabores: (patch: { usa_sabores_dia?: boolean; sabores?: Sabor[] }) => void
 }) {
+  const [abierto, setAbierto] = useState(false)
+  const [nuevoSabor, setNuevoSabor] = useState('')
+  const usaSabores = (plato as any).usa_sabores_dia === true
+  const sabores = normalizarSabores((plato as any).sabores)
+  const hoy = sabores.filter(s => s.disponible)
+
+  function agregarSabor() {
+    const nombre = nuevoSabor.trim()
+    if (!nombre) return
+    if (sabores.some(s => s.nombre.toLowerCase() === nombre.toLowerCase())) { setNuevoSabor(''); return }
+    onSabores({ sabores: [...sabores, { nombre, disponible: true }] })
+    setNuevoSabor('')
+  }
+
   const ingredientes = Array.isArray(plato.ingredientes) ? plato.ingredientes : []
   const ingredientesVisibles = ingredientes.slice(0, 4)
   const ingredientesRestantes = ingredientes.length - ingredientesVisibles.length
@@ -324,6 +367,92 @@ function PlatoCard({
                 <img src={f.foto_url} alt={f.pie || plato.nombre} className="w-full h-full object-cover" />
               </div>
             ))}
+          </div>
+        )}
+
+        {esDueno && (
+          <div className="border-t border-line pt-2.5 mb-2.5">
+            <div className="flex items-center gap-2">
+              <button
+                role="switch" aria-checked={usaSabores}
+                aria-label={`Sabor del día en ${plato.nombre}`}
+                onClick={() => { onSabores({ usa_sabores_dia: !usaSabores }); setAbierto(!usaSabores) }}
+                className={cn(
+                  "relative w-9 h-5 rounded-full transition-colors shrink-0",
+                  usaSabores ? "bg-oso-600" : "bg-oso-100"
+                )}
+              >
+                <span className={cn(
+                  "absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all",
+                  usaSabores ? "left-[18px]" : "left-0.5"
+                )} />
+              </button>
+              <span className="text-xs text-mute flex-1">Sabor del día</span>
+              {usaSabores && (
+                <button onClick={() => setAbierto(a => !a)}
+                  className="text-[11px] text-oso-700 hover:text-oso-900">
+                  {abierto ? 'Cerrar ▲' : `${sabores.length} ▼`}
+                </button>
+              )}
+            </div>
+
+            {usaSabores && !abierto && (
+              <p className="text-[10px] text-mute mt-1 truncate">
+                {sabores.length === 0
+                  ? 'Sin sabores cargados'
+                  : hoy.length === 0
+                    ? 'Hoy no hay ninguno'
+                    : `Hoy: ${hoy.map(s => s.nombre).join(', ')}`}
+              </p>
+            )}
+
+            {usaSabores && abierto && (
+              <div className="mt-2 space-y-1.5">
+                {sabores.map((sab, i) => (
+                  <div key={`${sab.nombre}-${i}`} className="flex items-center gap-1.5">
+                    <label className="flex items-center gap-1.5 flex-1 cursor-pointer min-w-0">
+                      <input
+                        type="checkbox" checked={sab.disponible}
+                        onChange={() => onSabores({
+                          sabores: sabores.map((x, j) => j === i ? { ...x, disponible: !x.disponible } : x),
+                        })}
+                      />
+                      <span className={cn("text-xs truncate", !sab.disponible && "text-mute line-through")}>
+                        {sab.nombre}
+                      </span>
+                    </label>
+                    <button
+                      onClick={() => onSabores({ sabores: sabores.filter((_, j) => j !== i) })}
+                      className="text-mute hover:text-red-600 text-xs px-1"
+                      aria-label={`Quitar ${sab.nombre}`}
+                    >✕</button>
+                  </div>
+                ))}
+
+                <div className="flex gap-1.5 pt-0.5">
+                  <input
+                    value={nuevoSabor}
+                    onChange={e => setNuevoSabor(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); agregarSabor() } }}
+                    placeholder="Agregar sabor"
+                    className="flex-1 min-w-0 px-2 py-1 bg-canvas border border-line rounded text-xs focus:outline-none focus:ring-2 focus:ring-oso-300"
+                  />
+                  <button onClick={agregarSabor}
+                    className="px-2 py-1 bg-oso-100 text-oso-800 rounded text-xs hover:bg-oso-200 transition-colors shrink-0">
+                    +
+                  </button>
+                </div>
+
+                {hoy.length > 0 && (
+                  <button
+                    onClick={() => onSabores({ sabores: sabores.map(x => ({ ...x, disponible: false })) })}
+                    className="text-[10px] text-mute hover:text-ink underline decoration-dotted"
+                  >
+                    Hoy no hay ninguno
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
 

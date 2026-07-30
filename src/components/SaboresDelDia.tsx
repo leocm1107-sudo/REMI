@@ -1,8 +1,8 @@
-// src/components/SaboresDelDia.tsx — Sabores por producto (vista en tarjetas)
-// Los sabores NO son una lista global: cada producto tiene los suyos (los del
-// Munchie no son los de una torta). El interruptor marca qué productos cambian
-// de sabor según el día; esos suben al tope y su tarjeta se abre para cargar
-// los sabores de hoy.
+// src/components/SaboresDelDia.tsx — Sabores del día (vista en tarjetas)
+// Acá SOLO aparecen los productos que dependen del sabor del día. El
+// interruptor para activar uno nuevo vive en la tarjeta del producto, dentro
+// del Menú: esta sección es para la rutina de cada mañana —marcar qué sabores
+// hay hoy— no para revisar el catálogo entero.
 //
 // Montar donde tenga sentido (arriba del Menú, o en su pestaña):
 //   import SaboresDelDia from '../components/SaboresDelDia'
@@ -29,43 +29,56 @@ export default function SaboresDelDia() {
   const [platos, setPlatos] = useState<Plato[]>([])
   const [cargando, setCargando] = useState(true)
   const [abierto, setAbierto] = useState<string | null>(null)
-  const [busca, setBusca] = useState('')
   const [nuevo, setNuevo] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    async function cargar() {
-      const { data: cat } = await supabase.from('categorias').select('restaurante_id').limit(1).maybeSingle()
-      const rid = (cat as any)?.restaurante_id
-      if (rid) {
-        const { data } = await supabase.from('platos')
-          .select('id, nombre, usa_sabores_dia, sabores')
-          .eq('restaurante_id', rid)
-          .order('nombre')
-        setPlatos(((data ?? []) as any[]).map(p => ({
-          id: p.id,
-          nombre: p.nombre,
-          usa_sabores_dia: p.usa_sabores_dia === true,
-          sabores: normalizarSabores(p.sabores),
-        })))
-      }
-      setCargando(false)
+  async function cargar() {
+    const { data: cat } = await supabase.from('categorias').select('restaurante_id').limit(1).maybeSingle()
+    const rid = (cat as any)?.restaurante_id
+    if (rid) {
+      const { data } = await supabase.from('platos')
+        .select('id, nombre, usa_sabores_dia, sabores')
+        .eq('restaurante_id', rid)
+        .order('nombre')
+      setPlatos(((data ?? []) as any[]).map(p => ({
+        id: p.id,
+        nombre: p.nombre,
+        usa_sabores_dia: p.usa_sabores_dia === true,
+        sabores: normalizarSabores(p.sabores),
+      })))
     }
-    cargar()
+    setCargando(false)
+  }
+
+  useEffect(() => { cargar() }, [])
+
+  // El interruptor también está en la tarjeta del producto (Menú). Sin esto,
+  // prender uno allá no lo hacía aparecer acá hasta recargar la página.
+  useEffect(() => {
+    const canal = supabase.channel('sabores-live')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'platos' }, payload => {
+        const n = payload.new as any
+        setPlatos(prev => {
+          const existe = prev.some(p => p.id === n.id)
+          const fila = {
+            id: n.id, nombre: n.nombre,
+            usa_sabores_dia: n.usa_sabores_dia === true,
+            sabores: normalizarSabores(n.sabores),
+          }
+          return existe ? prev.map(p => p.id === n.id ? fila : p) : [...prev, fila]
+        })
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(canal) }
   }, [])
 
-  // Los que dependen del sabor del día van arriba — es lo que Angélica toca cada mañana
-  const ordenados = useMemo(() => {
-    const q = busca.trim().toLowerCase()
-    return [...platos]
-      .filter(p => !q || p.nombre.toLowerCase().includes(q))
-      .sort((a, b) => {
-        if (a.usa_sabores_dia !== b.usa_sabores_dia) return a.usa_sabores_dia ? -1 : 1
-        return a.nombre.localeCompare(b.nombre, 'es')
-      })
-  }, [platos, busca])
-
-  const conSabores = useMemo(() => platos.filter(p => p.usa_sabores_dia), [platos])
+  // Solo los que dependen del sabor del día. Los demás se activan desde la
+  // tarjeta del producto en el Menú, no desde acá.
+  const ordenados = useMemo(
+    () => platos.filter(p => p.usa_sabores_dia)
+                .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')),
+    [platos],
+  )
 
   async function guardar(id: string, patch: Partial<Plato>) {
     setError(null)
@@ -115,8 +128,7 @@ export default function SaboresDelDia() {
       <div>
         <h3 className="font-display text-lg font-semibold">Sabores del día</h3>
         <p className="text-sm text-mute mt-0.5">
-          Cada producto tiene sus propios sabores. Prendé el interruptor en los que
-          cambian según el día y marcá cuáles hay hoy — el bot solo ofrece los marcados.
+          Marcá cuáles hay hoy: el bot solo ofrece los que dejes encendidos.
         </p>
       </div>
 
@@ -124,17 +136,14 @@ export default function SaboresDelDia() {
         <div className="rounded-lg px-3 py-2 text-sm bg-red-50 text-red-700 border border-red-200">{error}</div>
       )}
 
-      {conSabores.length === 0 && !cargando && (
-        <div className="border border-dashed border-line rounded-lg p-5 text-center">
+      {ordenados.length === 0 && !cargando && (
+        <div className="border border-dashed border-line rounded-lg p-4 text-center">
           <p className="text-sm text-mute">
-            Todavía ningún producto depende del sabor del día. Prendé el interruptor
-            en el producto que cambie —el Munchie, por ejemplo— y cargale sus sabores.
+            Ningún producto depende del sabor del día todavía. Buscalo abajo en el
+            menú y prendé el interruptor <strong>“Sabor del día”</strong> en su tarjeta.
           </p>
         </div>
       )}
-
-      <input className={`${inputCls} max-w-sm !py-2 !text-sm`} value={busca} onChange={e => setBusca(e.target.value)}
-        placeholder="Buscar producto…" />
 
       {cargando ? (
         <p className="text-sm text-mute">Cargando…</p>
