@@ -626,13 +626,13 @@ export default function Agenda({ session }: { session: Session }) {
                           >
                             {full && (
                               <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none transition-opacity duration-150 group-hover:opacity-20">
-                                <IconProhibido className="w-11 h-11 sm:w-12 sm:h-12 text-red-500/85" />
+                                <IconProhibido className="w-15 h-15 sm:w-16 sm:h-16 text-red-500/85" />
                               </div>
                             )}
                             {saturado && (
                               <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none transition-opacity duration-150 group-hover:opacity-20"
                                 title={`${entregasPorDia.get(fecha) ?? 0} entregas — día saturado`}>
-                                <IconAlerta className="w-11 h-11 sm:w-12 sm:h-12 text-amber-500/90" />
+                                <IconAlerta className="w-15 h-15 sm:w-16 sm:h-16 text-amber-500/90" />
                               </div>
                             )}
 
