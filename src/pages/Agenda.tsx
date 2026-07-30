@@ -77,6 +77,13 @@ const CAPAS: Record<Capa, { nombre: string; punto: string; chip: string; activo:
   bloqueo:  { nombre: 'Bloqueos',   punto: 'bg-red-500',    chip: 'bg-red-50 text-red-900 border-red-200',          activo: 'bg-red-500 text-white border-red-500' },
 }
 
+// Dentro de la capa "Entregas", separa por color el pedido normal del
+// personalizado, para que se distingan de un vistazo aunque estén mezclados
+const claseChipEvento = (e: Evento) =>
+  e.capa === 'entrega' && e.personalizado
+    ? 'bg-oso-50 text-violet-700 border-oso-200'
+    : CAPAS[e.capa].chip
+
 function fechaLarga(iso: string) {
   const [a, m, d] = iso.split('-').map(Number)
   const f = new Date(a, m - 1, d)
@@ -116,10 +123,27 @@ const badge: Record<string, string> = {
 const inputCls =
   'px-2 py-1.5 bg-canvas border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300'
 
-// Raya de esquina a esquina para los días cerrados
-const TACHADO = {
-  backgroundImage:
-    'linear-gradient(to top right, transparent calc(50% - 3px), rgb(239 68 68 / 0.85) calc(50% - 3px), rgb(239 68 68 / 0.85) calc(50% + 3px), transparent calc(50% + 3px))',
+// Símbolo de "día cerrado": el mismo tipo de señal de prohibido, solo el
+// trazo, sin fondo, con el mismo grosor que tenía antes la raya diagonal.
+function IconoCerrado({ className = '' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="9" fill="none" stroke="rgb(220 38 38)" strokeWidth="3" />
+      <line x1="6.3" y1="17.7" x2="17.7" y2="6.3" stroke="rgb(220 38 38)" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// Símbolo de "día saturado de pedidos": el mismo triángulo de alerta, solo
+// el trazo, sin fondo, en amarillo cuando se activa.
+function IconoAlerta({ className = '' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <path d="M12 3.2 L21.6 20.4 L2.4 20.4 Z" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />
+      <line x1="12" y1="9.6" x2="12" y2="14.4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      <circle cx="12" cy="17.3" r="1.15" fill="currentColor" stroke="none" />
+    </svg>
+  )
 }
 
 // Un color "tenue" de fondo por capa (y por combinación de dos capas), para
@@ -147,6 +171,15 @@ export default function Agenda({ session }: { session: Session }) {
   const [citas, setCitas] = useState<Cita[]>([])
   const [cargando, setCargando] = useState(true)
   const [capas, setCapas] = useState<Record<Capa, boolean>>({ entrega: true, revision: true, bloqueo: true })
+
+  // Cuántos pedidos (entregas + revisiones) hacen falta en un día para que
+  // se encienda el símbolo de alerta de "día saturado"
+  const [cupoMaxDia, setCupoMaxDia] = useState<number>(8)
+  const [editandoCupo, setEditandoCupo] = useState(false)
+
+  // Submenú de la flecha en el chip "Entregas": normales vs. personalizadas
+  const [entregaSubfiltro, setEntregaSubfiltro] = useState<'todas' | 'normales' | 'personalizadas'>('todas')
+  const [entregaMenuAbierto, setEntregaMenuAbierto] = useState(false)
 
   const [slots, setSlots] = useState<Slot[]>([])
   const [bloqueos, setBloqueos] = useState<Bloqueo[]>([])
@@ -222,12 +255,17 @@ export default function Agenda({ session }: { session: Session }) {
 
     for (const c of citas) {
       if (!capas[c.tipo]) continue
+      const personalizado = pedidosPersonalizados.has(c.pedido_id)
+      if (c.tipo === 'entrega' && entregaSubfiltro !== 'todas') {
+        if (entregaSubfiltro === 'normales' && personalizado) continue
+        if (entregaSubfiltro === 'personalizadas' && !personalizado) continue
+      }
       out.push({
         capa: c.tipo,
         fecha: c.fecha,
         hora: c.hora,
         etiqueta: `${c.pedidos?.numero_pedido ?? 'Pedido'}${c.pedidos?.clientes?.nombre ? ` · ${c.pedidos.clientes.nombre}` : ''}`,
-        personalizado: pedidosPersonalizados.has(c.pedido_id),
+        personalizado,
         cita: c,
       })
     }
@@ -252,7 +290,7 @@ export default function Agenda({ session }: { session: Session }) {
 
     return out.sort((a, b) =>
       a.fecha === b.fecha ? (a.hora ?? '').localeCompare(b.hora ?? '') : a.fecha.localeCompare(b.fecha))
-  }, [citas, bloqueos, slots, capas, pedidosPersonalizados])
+  }, [citas, bloqueos, slots, capas, pedidosPersonalizados, entregaSubfiltro])
 
   const porDia = useMemo(() => {
     const m = new Map<string, Evento[]>()
@@ -509,6 +547,8 @@ export default function Agenda({ session }: { session: Session }) {
                         const delDia = porDia.get(fecha) ?? []
                         const visibles = delDia.slice(0, 3)
                         const resto = delDia.length - visibles.length
+                        const cantidadPedidos = delDia.filter(e => e.capa !== 'bloqueo').length
+                        const saturado = !full && cupoMaxDia > 0 && cantidadPedidos >= cupoMaxDia
 
                         return (
                           <div
@@ -517,24 +557,32 @@ export default function Agenda({ session }: { session: Session }) {
                             tabIndex={0}
                             onClick={() => { setDiaSel(fecha); setTramo({ desde: '', hasta: '', motivo: '' }) }}
                             onKeyDown={ev => { if (ev.key === 'Enter') { setDiaSel(fecha); setTramo({ desde: '', hasta: '', motivo: '' }) } }}
-                            style={full ? TACHADO : undefined}
                             className={`relative text-left align-top min-h-[104px] p-1.5 transition-colors cursor-pointer ${
                               cerradoSemana ? tinte.celdaCerrada : tinte.celda
                             } ${diaSel === fecha ? 'ring-2 ring-inset ring-oso-600' : ''}`}
                           >
-                            <div className="flex items-center justify-between mb-1">
+                            {full && (
+                              <IconoCerrado className="absolute inset-0 m-auto w-11 h-11 pointer-events-none" />
+                            )}
+
+                            <div className="relative flex items-center justify-between mb-1">
                               <span className={`text-xs tnum ${
                                 esHoy ? 'bg-oso-600 text-white rounded-full w-5 h-5 grid place-items-center font-semibold'
                                       : cerradoSemana ? 'text-mute' : 'text-ink'
                               }`}>{dia}</span>
-                              {resto > 0 && <span className="text-[9px] text-mute">+{resto}</span>}
+                              <span className="flex items-center gap-1">
+                                {saturado && (
+                                  <IconoAlerta className="w-3.5 h-3.5 text-amber-500" />
+                                )}
+                                {resto > 0 && <span className="text-[9px] text-mute">+{resto}</span>}
+                              </span>
                             </div>
 
-                            <div className="space-y-0.5">
+                            <div className="relative space-y-0.5">
                               {visibles.map((e, k) => (
                                 <div key={k}
                                   onClick={ev => { ev.stopPropagation(); setEventoModal(e) }}
-                                  className={`flex items-center gap-1 rounded px-1 py-0.5 text-[10px] leading-tight border cursor-pointer hover:brightness-95 ${CAPAS[e.capa].chip}`}>
+                                  className={`flex items-center gap-1 rounded px-1 py-0.5 text-[10px] leading-tight border cursor-pointer hover:brightness-95 ${claseChipEvento(e)}`}>
                                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${CAPAS[e.capa].punto}`} />
                                   {e.hora && <span className="tnum shrink-0">{horaCorta(e.hora)}</span>}
                                   <span className="truncate">
@@ -551,14 +599,43 @@ export default function Agenda({ session }: { session: Session }) {
                   </div>
                 </div>
 
-                <div className="flex gap-4 mt-3 text-[11px] text-mute flex-wrap">
+                <div className="flex items-center gap-4 mt-3 text-[11px] text-mute flex-wrap">
                   <span className="flex items-center gap-1">✦ torta personalizada</span>
                   <span className="flex items-center gap-1">
-                    <span className="w-3 h-3 inline-block rounded-sm border border-line" style={TACHADO} /> día cerrado
+                    <IconoCerrado className="w-3.5 h-3.5" /> día cerrado
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <IconoAlerta className="w-3.5 h-3.5 text-amber-500" /> día saturado de pedidos
                   </span>
                   <span className="flex items-center gap-1">
                     <span className="w-2.5 h-2.5 rounded bg-canvas border border-line inline-block" /> sin atención
                   </span>
+
+                  {esDueno && (
+                    <span className="flex items-center gap-1.5 ml-auto">
+                      Alertar desde
+                      {editandoCupo ? (
+                        <input
+                          type="number"
+                          min={1}
+                          autoFocus
+                          value={cupoMaxDia}
+                          onChange={ev => setCupoMaxDia(Math.max(1, Number(ev.target.value) || 1))}
+                          onBlur={() => setEditandoCupo(false)}
+                          onKeyDown={ev => { if (ev.key === 'Enter') setEditandoCupo(false) }}
+                          className="w-12 px-1 py-0.5 bg-canvas border border-line rounded text-xs tnum focus:outline-none focus:ring-2 focus:ring-oso-300"
+                        />
+                      ) : (
+                        <button
+                          onClick={() => setEditandoCupo(true)}
+                          className="px-1.5 py-0.5 bg-canvas border border-line rounded tnum hover:bg-oso-50"
+                        >
+                          {cupoMaxDia}
+                        </button>
+                      )}
+                      pedidos/día
+                    </span>
+                  )}
                 </div>
 
                 {/* Detalle del día */}
@@ -571,7 +648,7 @@ export default function Agenda({ session }: { session: Session }) {
                         {(porDia.get(diaSel) ?? []).map((e, k) => (
                           <div key={k}
                             onClick={() => setEventoModal(e)}
-                            className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs border cursor-pointer hover:brightness-95 transition-[filter] ${CAPAS[e.capa].chip}`}>
+                            className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs border cursor-pointer hover:brightness-95 transition-[filter] ${claseChipEvento(e)}`}>
                             <span className={`w-2 h-2 rounded-full shrink-0 ${CAPAS[e.capa].punto}`} />
                             {e.hora && <span className="tnum shrink-0">{hhmm(e.hora)}</span>}
                             <span className="flex-1 truncate">
