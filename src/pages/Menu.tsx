@@ -38,6 +38,7 @@ export default function Menu({ session }: { session: Session }) {
   const [busqueda, setBusqueda]     = useState('')
   const [catFiltro, setCatFiltro]   = useState<string | 'todas'>('todas')
   const [editando, setEditando]     = useState<Plato | 'nuevo' | null>(null)
+  const [tab, setTab]               = useState<'platos' | 'reglas'>('platos')
 
   // Carga inicial
   useEffect(() => {
@@ -203,6 +204,28 @@ export default function Menu({ session }: { session: Session }) {
         )}
       </div>
 
+      {esDueno && (
+        <div className="flex gap-2 mb-7">
+          {([
+            ['platos', 'Platos'],
+            ['reglas', 'Reglas por categoría'],
+          ] as const).map(([v, label]) => (
+            <button
+              key={v}
+              onClick={() => setTab(v)}
+              className={cn(
+                "px-4 py-1.5 rounded-full text-sm font-medium transition-colors",
+                tab === v ? "bg-oso-800 text-white" : "bg-oso-100 text-oso-800 hover:bg-oso-200"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === 'platos' && (
+      <>
       {/* Búsqueda y filtro */}
       <div className="flex gap-2 mb-6 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
@@ -264,9 +287,11 @@ export default function Menu({ session }: { session: Session }) {
           })}
         </div>
       )}
+      </>
+      )}
 
-      {esDueno && (
-        <div className="mt-10">
+      {esDueno && tab === 'reglas' && (
+        <div>
           <ConfigCategorias />
         </div>
       )}

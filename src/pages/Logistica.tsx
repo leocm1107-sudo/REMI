@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { cn, formatCOP } from '../lib/utils'
 import type { PerfilUsuario } from '../lib/types'
 import { useMarca } from '../lib/tema'
+import Festivos from '../components/Festivos'
 
 type ColaItem = {
   id: string
@@ -604,6 +605,10 @@ export default function Logistica({ session }: { session: Session }) {
               <p className="text-xs text-mute mt-2">
                 Este horario controla cuándo el bot toma pedidos normales vs los pone en cola, y si avisa que está cerrado.
               </p>
+            </div>
+
+            <div className="border-t border-line pt-5">
+              <Festivos />
             </div>
 
             <div className="border-t border-line pt-5 grid grid-cols-1 sm:grid-cols-2 gap-5">
