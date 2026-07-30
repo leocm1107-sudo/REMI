@@ -1,8 +1,11 @@
 // src/pages/Agenda.tsx — Agenda de encargos
-// Tres pestañas:
-//   Citas  — las citas (revisión y entrega) agrupadas por día (lo de siempre)
-//   Slots  — la planilla editable de franjas de entrega, con cupo y hora de cierre
-//   Días   — calendario para bloquear días completos, franjas sueltas o tramos de horas
+// Dos pestañas:
+//   Agenda  — todo junto (entregas, revisiones y bloqueos), en calendario o en lista
+//   Franjas — la planilla editable de franjas de entrega, con cupo y hora de cierre
+//
+// "Citas" y "Días disponibles" dejaron de ser cosas separadas: son la misma
+// agenda vista de dos formas. Los filtros de arriba encienden y apagan capas,
+// como los calendarios de Google.
 import { useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
@@ -49,10 +52,30 @@ type Bloqueo = {
   origen: string | null
 }
 
+type Capa = 'entrega' | 'revision' | 'bloqueo'
+
+type Evento = {
+  capa: Capa
+  fecha: string
+  hora: string | null
+  etiqueta: string
+  personalizado: boolean
+  cita?: Cita
+  bloqueo?: Bloqueo
+}
+
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 const DIAS_CORTOS = ['D', 'L', 'M', 'M', 'J', 'V', 'S']
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
                'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+
+// Una capa, un color. Se usa igual en el chip del filtro, en el evento del
+// calendario y en el punto de la lista, para que la asociación sea inmediata.
+const CAPAS: Record<Capa, { nombre: string; punto: string; chip: string; activo: string }> = {
+  entrega:  { nombre: 'Entregas',   punto: 'bg-oso-600',    chip: 'bg-oso-50 text-oso-900 border-oso-200',          activo: 'bg-oso-600 text-white border-oso-600' },
+  revision: { nombre: 'Revisiones', punto: 'bg-violet-500', chip: 'bg-violet-50 text-violet-900 border-violet-200', activo: 'bg-violet-500 text-white border-violet-500' },
+  bloqueo:  { nombre: 'Bloqueos',   punto: 'bg-red-500',    chip: 'bg-red-50 text-red-900 border-red-200',          activo: 'bg-red-500 text-white border-red-500' },
+}
 
 function fechaLarga(iso: string) {
   const [a, m, d] = iso.split('-').map(Number)
@@ -66,7 +89,22 @@ function hoyISO() {
 function isoDe(anio: number, mes: number, dia: number) {
   return `${anio}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`
 }
+function haceDias(n: number) {
+  const f = new Date()
+  f.setDate(f.getDate() - n)
+  return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`
+}
 const hhmm = (t: string | null) => (t ?? '').slice(0, 5)
+
+// Hora corta para el chip del calendario: "15:00" → "3pm", "11:30" → "11:30am"
+function horaCorta(t: string | null) {
+  const s = hhmm(t)
+  if (!s) return ''
+  const [h, m] = s.split(':').map(Number)
+  const suf = h >= 12 ? 'pm' : 'am'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return m === 0 ? `${h12}${suf}` : `${h12}:${String(m).padStart(2, '0')}${suf}`
+}
 
 const badge: Record<string, string> = {
   propuesta:  'bg-amber-100 text-amber-800',
@@ -78,17 +116,22 @@ const badge: Record<string, string> = {
 const inputCls =
   'px-2 py-1.5 bg-canvas border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300'
 
+// Raya de esquina a esquina para los días cerrados
+const TACHADO = {
+  backgroundImage:
+    'linear-gradient(to top right, transparent calc(50% - 0.5px), rgb(248 113 113 / 0.75) calc(50% - 0.5px), rgb(248 113 113 / 0.75) calc(50% + 0.5px), transparent calc(50% + 0.5px))',
+}
+
 export default function Agenda({ session }: { session: Session }) {
-  const [tab, setTab] = useState<'citas' | 'slots' | 'dias'>('citas')
+  const [tab, setTab] = useState<'agenda' | 'slots'>('agenda')
+  const [modo, setModo] = useState<'calendario' | 'lista'>('calendario')
   const [esDueno, setEsDueno] = useState(false)
   const [restauranteId, setRestauranteId] = useState<string>('')
 
-  // ── Citas ──
   const [citas, setCitas] = useState<Cita[]>([])
   const [cargando, setCargando] = useState(true)
-  const [filtro, setFiltro] = useState<'todas' | 'revision' | 'entrega'>('todas')
+  const [capas, setCapas] = useState<Record<Capa, boolean>>({ entrega: true, revision: true, bloqueo: true })
 
-  // ── Slots y bloqueos ──
   const [slots, setSlots] = useState<Slot[]>([])
   const [bloqueos, setBloqueos] = useState<Bloqueo[]>([])
   const [diasSemana, setDiasSemana] = useState<Record<number, boolean>>({})
@@ -102,10 +145,12 @@ export default function Agenda({ session }: { session: Session }) {
 
   async function cargar() {
     setCargando(true)
+    // Desde 90 días atrás: alcanza para navegar unos meses hacia atrás sin
+    // volver a consultar cada vez que se cambia de mes.
     const { data } = await supabase
       .from('citas')
       .select('id, tipo, fecha, hora, estado, notas, pedido_id, pedidos(numero_pedido, total, estado, tipo_entrega, direccion_entrega, clientes(nombre, telefono))')
-      .gte('fecha', hoyISO())
+      .gte('fecha', haceDias(90))
       .neq('estado', 'cancelada')
       .order('fecha')
       .order('hora', { nullsFirst: true })
@@ -146,20 +191,74 @@ export default function Agenda({ session }: { session: Session }) {
     return () => { supabase.removeChannel(canal) }
   }, [])
 
-  const visibles = useMemo(
-    () => (filtro === 'todas' ? citas : citas.filter(c => c.tipo === filtro)),
-    [citas, filtro],
-  )
+  // Un pedido es personalizado si tiene cita de revisión: esa cita solo se crea
+  // para tortas a medida y mesas dulces. No hace falta una columna nueva.
+  const pedidosPersonalizados = useMemo(() => {
+    const s = new Set<string>()
+    for (const c of citas) if (c.tipo === 'revision') s.add(c.pedido_id)
+    return s
+  }, [citas])
+
+  // Todo lo que va al calendario, ya filtrado por las capas encendidas
+  const eventos = useMemo<Evento[]>(() => {
+    const out: Evento[] = []
+
+    for (const c of citas) {
+      if (!capas[c.tipo]) continue
+      out.push({
+        capa: c.tipo,
+        fecha: c.fecha,
+        hora: c.hora,
+        etiqueta: `${c.pedidos?.numero_pedido ?? 'Pedido'}${c.pedidos?.clientes?.nombre ? ` · ${c.pedidos.clientes.nombre}` : ''}`,
+        personalizado: pedidosPersonalizados.has(c.pedido_id),
+        cita: c,
+      })
+    }
+
+    if (capas.bloqueo) {
+      for (const b of bloqueos) {
+        const desc = b.slot_id
+          ? `Franja ${slots.find(s => s.id === b.slot_id)?.etiqueta ?? ''}`
+          : b.hora_desde
+            ? `${hhmm(b.hora_desde)}–${hhmm(b.hora_hasta)}`
+            : 'Día cerrado'
+        out.push({
+          capa: 'bloqueo',
+          fecha: b.fecha,
+          hora: b.hora_desde,
+          etiqueta: b.motivo ? `${desc} · ${b.motivo}` : desc,
+          personalizado: false,
+          bloqueo: b,
+        })
+      }
+    }
+
+    return out.sort((a, b) =>
+      a.fecha === b.fecha ? (a.hora ?? '').localeCompare(b.hora ?? '') : a.fecha.localeCompare(b.fecha))
+  }, [citas, bloqueos, slots, capas, pedidosPersonalizados])
 
   const porDia = useMemo(() => {
-    const m = new Map<string, Cita[]>()
-    for (const c of visibles) {
-      const arr = m.get(c.fecha) ?? []
-      arr.push(c)
-      m.set(c.fecha, arr)
+    const m = new Map<string, Evento[]>()
+    for (const e of eventos) {
+      const arr = m.get(e.fecha) ?? []
+      arr.push(e)
+      m.set(e.fecha, arr)
+    }
+    return m
+  }, [eventos])
+
+  // La lista solo mira de hoy en adelante: es una agenda de trabajo, no un histórico
+  const listaFutura = useMemo(() => {
+    const h = hoyISO()
+    const m = new Map<string, Evento[]>()
+    for (const e of eventos) {
+      if (e.fecha < h) continue
+      const arr = m.get(e.fecha) ?? []
+      arr.push(e)
+      m.set(e.fecha, arr)
     }
     return [...m.entries()]
-  }, [visibles])
+  }, [eventos])
 
   async function cambiarEstado(id: string, estado: Cita['estado']) {
     await supabase.from('citas').update({
@@ -171,7 +270,10 @@ export default function Agenda({ session }: { session: Session }) {
     cargar()
   }
 
-  const pendientes = citas.filter(c => c.estado === 'propuesta').length
+  const porConfirmar = useMemo(
+    () => citas.filter(c => c.estado === 'propuesta' && c.fecha >= hoyISO()),
+    [citas],
+  )
 
   // ── Slots ──
   function editarSlot(id: string, campo: keyof Slot, valor: any) {
@@ -240,12 +342,12 @@ export default function Agenda({ session }: { session: Session }) {
     cargarConfig()
   }
 
-  // Grilla del mes
   const grilla = useMemo(() => {
     const primerDia = new Date(vista.anio, vista.mes, 1).getDay()
     const total = new Date(vista.anio, vista.mes + 1, 0).getDate()
     const celdas: (string | null)[] = Array(primerDia).fill(null)
     for (let d = 1; d <= total; d++) celdas.push(isoDe(vista.anio, vista.mes, d))
+    while (celdas.length % 7 !== 0) celdas.push(null)
     return celdas
   }, [vista])
 
@@ -259,136 +361,316 @@ export default function Agenda({ session }: { session: Session }) {
     setDiaSel(null)
   }
 
+  function irAHoy() {
+    const f = new Date()
+    setVista({ anio: f.getFullYear(), mes: f.getMonth() })
+    setDiaSel(hoyISO())
+  }
+
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6">
+    <div className="max-w-5xl mx-auto px-4 py-6">
       <div className="mb-5">
         <h1 className="font-display text-4xl font-semibold tracking-tight mb-1">Agenda</h1>
         <p className="text-mute text-sm">
-          {pendientes > 0
-            ? `${pendientes} cita${pendientes === 1 ? '' : 's'} por confirmar`
+          {porConfirmar.length > 0
+            ? `${porConfirmar.length} cita${porConfirmar.length === 1 ? '' : 's'} por confirmar`
             : 'Todas las citas están confirmadas'}
         </p>
       </div>
 
       {esDueno && (
-        <div className="flex gap-2 mb-6 flex-wrap">
-          {([['citas', 'Citas'], ['slots', 'Franjas de entrega'], ['dias', 'Días disponibles']] as const)
-            .map(([v, label]) => (
-              <button
-                key={v}
-                onClick={() => setTab(v)}
-                className={`px-4 py-1.5 rounded-full text-sm transition-colors ${
-                  tab === v ? 'bg-oso-800 text-white' : 'bg-oso-100 text-oso-800 hover:bg-oso-200'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+        <div className="flex gap-2 mb-5 flex-wrap">
+          {([['agenda', 'Agenda'], ['slots', 'Franjas de entrega']] as const).map(([v, label]) => (
+            <button
+              key={v}
+              onClick={() => setTab(v)}
+              className={`px-4 py-1.5 rounded-full text-sm transition-colors ${
+                tab === v ? 'bg-oso-800 text-white' : 'bg-oso-100 text-oso-800 hover:bg-oso-200'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       )}
 
-      {/* ══════════ CITAS ══════════ */}
-      {tab === 'citas' && (
+      {/* ══════════ AGENDA ══════════ */}
+      {tab === 'agenda' && (
         <>
-          <div className="flex gap-2 mb-6">
-            {([['todas', 'Todas'], ['revision', 'Revisiones'], ['entrega', 'Entregas']] as const).map(([v, label]) => (
-              <button
-                key={v}
-                onClick={() => setFiltro(v)}
-                className={`px-3 py-1 rounded-full text-xs transition-colors ${
-                  filtro === v ? 'bg-oso-600 text-white' : 'bg-canvas text-mute hover:bg-oso-100'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+          {/* Capas + modo de vista */}
+          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+            <div className="flex gap-2 flex-wrap">
+              {(Object.keys(CAPAS) as Capa[]).map(c => {
+                const on = capas[c]
+                return (
+                  <button
+                    key={c}
+                    onClick={() => setCapas(p => ({ ...p, [c]: !p[c] }))}
+                    aria-pressed={on}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs border transition-colors ${
+                      on ? CAPAS[c].activo : 'bg-canvas text-mute border-line hover:bg-oso-50'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${on ? 'bg-white/90' : CAPAS[c].punto}`} />
+                    {CAPAS[c].nombre}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="flex items-center gap-1 bg-canvas border border-line rounded-full p-0.5">
+              {([['calendario', 'Calendario'], ['lista', 'Lista']] as const).map(([v, label]) => (
+                <button
+                  key={v}
+                  onClick={() => setModo(v)}
+                  className={`px-3 py-1 rounded-full text-xs transition-colors ${
+                    modo === v ? 'bg-oso-800 text-white' : 'text-mute hover:text-ink'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {cargando ? (
             <p className="text-center text-mute py-20 text-sm">Cargando agenda…</p>
-          ) : porDia.length === 0 ? (
-            <div className="text-center py-20 bg-surface border border-dashed border-line rounded-xl">
-              <p className="text-ink font-medium">No hay nada agendado.</p>
-              <p className="text-xs text-mute mt-1">Los encargos con fecha aparecerán aquí.</p>
-            </div>
-          ) : (
-            <div className="space-y-7">
-              {porDia.map(([fecha, delDia]) => (
-                <div key={fecha}>
-                  <div className="flex items-baseline gap-3 mb-3">
-                    <h2 className="font-display text-lg font-semibold capitalize">{fechaLarga(fecha)}</h2>
-                    <span className="text-xs text-mute">
-                      {delDia.length} {delDia.length === 1 ? 'encargo' : 'encargos'}
-                    </span>
-                  </div>
-
-                  <div className="space-y-2.5">
-                    {delDia.map(c => (
-                      <div key={c.id} className="bg-surface border border-line rounded-xl p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm font-medium">
-                                {c.tipo === 'revision' ? '📝 Revisión' : '📦 Entrega'}
-                              </span>
-                              {c.hora && <span className="text-xs text-mute tnum">{hhmm(c.hora)}</span>}
-                              <span className={`text-[11px] px-2 py-0.5 rounded-full ${badge[c.estado]}`}>
-                                {c.estado}
-                              </span>
-                            </div>
-
-                            <p className="text-sm mt-1.5">
-                              {c.pedidos?.numero_pedido ?? '—'}
-                              {c.pedidos?.clientes?.nombre ? ` · ${c.pedidos.clientes.nombre}` : ''}
-                            </p>
-                            <p className="text-xs text-mute">
-                              {c.pedidos?.clientes?.telefono ?? ''}
-                              {c.pedidos?.tipo_entrega === 'domicilio' && c.pedidos?.direccion_entrega
-                                ? ` · ${c.pedidos.direccion_entrega}`
-                                : c.pedidos?.tipo_entrega === 'recoger' ? ' · Recoge en el taller' : ''}
-                            </p>
-                            {c.notas && <p className="text-xs text-mute mt-1">🕐 {c.notas}</p>}
-                          </div>
-
-                          <div className="text-right shrink-0">
-                            <p className="tnum text-sm font-medium">{formatCOP(c.pedidos?.total ?? 0)}</p>
-                          </div>
-                        </div>
-
-                        {(c.estado === 'propuesta' || c.estado === 'confirmada') && (
-                          <div className="flex gap-2 mt-3 pt-3 border-t border-line">
-                            {c.estado === 'propuesta' && (
-                              <button
-                                onClick={() => cambiarEstado(c.id, 'confirmada')}
-                                className="px-3 py-1.5 bg-oso-600 text-white rounded-lg text-xs font-medium hover:bg-oso-700 transition-colors"
-                              >
-                                Confirmar cita
-                              </button>
-                            )}
-                            {c.estado === 'confirmada' && (
-                              <button
-                                onClick={() => cambiarEstado(c.id, 'cumplida')}
-                                className="px-3 py-1.5 bg-oso-100 text-oso-800 rounded-lg text-xs hover:bg-oso-200 transition-colors"
-                              >
-                                Marcar cumplida
-                              </button>
-                            )}
-                            <button
-                              onClick={() => {
-                                if (confirm('¿Cancelar esta cita?')) cambiarEstado(c.id, 'cancelada')
-                              }}
-                              className="px-3 py-1.5 text-xs text-mute hover:text-red-600 transition-colors"
-                            >
-                              Cancelar
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+          ) : modo === 'calendario' ? (
+            <>
+              <section className="bg-surface border border-line rounded-xl p-4 sm:p-5">
+                <div className="flex items-center justify-between mb-4 gap-3">
+                  <h2 className="font-display text-xl font-semibold tracking-tight capitalize">
+                    {MESES[vista.mes]} {vista.anio}
+                  </h2>
+                  <div className="flex gap-1">
+                    <button onClick={irAHoy}
+                      className="px-3 py-1 bg-canvas border border-line rounded-lg text-xs hover:bg-oso-50">Hoy</button>
+                    <button onClick={() => moverMes(-1)} aria-label="Mes anterior"
+                      className="px-2.5 py-1 bg-canvas border border-line rounded-lg text-sm hover:bg-oso-50">‹</button>
+                    <button onClick={() => moverMes(1)} aria-label="Mes siguiente"
+                      className="px-2.5 py-1 bg-canvas border border-line rounded-lg text-sm hover:bg-oso-50">›</button>
                   </div>
                 </div>
-              ))}
-            </div>
+
+                <div className="overflow-x-auto -mx-1 px-1">
+                  <div className="min-w-[640px]">
+                    <div className="grid grid-cols-7 gap-px mb-px">
+                      {DIAS_CORTOS.map((d, i) => (
+                        <div key={i} className="text-center text-[10px] uppercase tracking-wider text-mute py-1">{d}</div>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-px bg-line rounded-lg overflow-hidden">
+                      {grilla.map((fecha, i) => {
+                        if (!fecha) return <div key={`v${i}`} className="bg-canvas/40 min-h-[104px]" />
+                        const dia = Number(fecha.slice(8))
+                        const dow = new Date(vista.anio, vista.mes, dia).getDay()
+                        const cerradoSemana = diasSemana[dow] === true
+                        const full = !!bloqueoDiaCompleto(fecha)
+                        const esHoy = fecha === hoyISO()
+                        const delDia = porDia.get(fecha) ?? []
+                        const visibles = delDia.slice(0, 3)
+                        const resto = delDia.length - visibles.length
+
+                        return (
+                          <button
+                            key={fecha}
+                            onClick={() => { setDiaSel(fecha); setTramo({ desde: '', hasta: '', motivo: '' }) }}
+                            style={full ? TACHADO : undefined}
+                            className={`relative text-left align-top min-h-[104px] p-1.5 transition-colors ${
+                              cerradoSemana ? 'bg-canvas/70' : 'bg-surface hover:bg-oso-50/60'
+                            } ${diaSel === fecha ? 'ring-2 ring-inset ring-oso-600' : ''}`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className={`text-xs tnum ${
+                                esHoy ? 'bg-oso-600 text-white rounded-full w-5 h-5 grid place-items-center font-semibold'
+                                      : cerradoSemana ? 'text-mute' : 'text-ink'
+                              }`}>{dia}</span>
+                              {resto > 0 && <span className="text-[9px] text-mute">+{resto}</span>}
+                            </div>
+
+                            <div className="space-y-0.5">
+                              {visibles.map((e, k) => (
+                                <div key={k}
+                                  className={`flex items-center gap-1 rounded px-1 py-0.5 text-[10px] leading-tight border ${CAPAS[e.capa].chip}`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${CAPAS[e.capa].punto}`} />
+                                  {e.hora && <span className="tnum shrink-0">{horaCorta(e.hora)}</span>}
+                                  <span className="truncate">
+                                    {e.personalizado && <span title="Torta personalizada">✦ </span>}
+                                    {e.etiqueta}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-4 mt-3 text-[11px] text-mute flex-wrap">
+                  <span className="flex items-center gap-1">✦ torta personalizada</span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-3 h-3 inline-block rounded-sm border border-line" style={TACHADO} /> día cerrado
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded bg-canvas border border-line inline-block" /> sin atención
+                  </span>
+                </div>
+
+                {/* Detalle del día */}
+                {diaSel && (
+                  <div className="mt-5 pt-4 border-t border-line">
+                    <h3 className="font-medium text-sm capitalize mb-3">{fechaLarga(diaSel)}</h3>
+
+                    {(porDia.get(diaSel) ?? []).length > 0 && (
+                      <div className="space-y-1.5 mb-4">
+                        {(porDia.get(diaSel) ?? []).map((e, k) => (
+                          <div key={k} className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs border ${CAPAS[e.capa].chip}`}>
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${CAPAS[e.capa].punto}`} />
+                            {e.hora && <span className="tnum shrink-0">{hhmm(e.hora)}</span>}
+                            <span className="flex-1 truncate">
+                              {e.personalizado && '✦ '}{e.etiqueta}
+                            </span>
+                            {e.cita && (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${badge[e.cita.estado]}`}>
+                                {e.cita.estado}
+                              </span>
+                            )}
+                            {e.bloqueo && esDueno && (
+                              <button onClick={ev => { ev.stopPropagation(); quitarBloqueo(e.bloqueo!.id) }}
+                                className="text-mute hover:text-red-600" aria-label="Quitar bloqueo">×</button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {esDueno && (
+                      <>
+                        <div className="flex items-center gap-2.5 mb-4">
+                          <button
+                            onClick={() => toggleDiaCompleto(diaSel)}
+                            className={`relative rounded-full transition-colors shrink-0 ${
+                              bloqueoDiaCompleto(diaSel) ? 'bg-red-500' : 'bg-line'}`}
+                            style={{ height: '22px', width: '40px' }}
+                            aria-label="Cerrar el día completo"
+                          >
+                            <span className="absolute top-0.5 left-0.5 bg-white rounded-full transition-transform"
+                              style={{ height: '18px', width: '18px',
+                                transform: bloqueoDiaCompleto(diaSel) ? 'translateX(18px)' : 'none' }} />
+                          </button>
+                          <span className="text-sm">Cerrar todo el día</span>
+                        </div>
+
+                        {!bloqueoDiaCompleto(diaSel) && (
+                          <>
+                            <div className="text-[11px] uppercase tracking-wider text-mute mb-2">Franjas de este día</div>
+                            <div className="space-y-1.5 mb-4">
+                              {slots.filter(s => s.activo).map(s => {
+                                const bloq = bloqueos.some(b => b.fecha === diaSel && b.slot_id === s.id)
+                                return (
+                                  <div key={s.id} className="flex items-center gap-2.5 bg-canvas/50 border border-line rounded-lg px-2.5 py-1.5">
+                                    <button
+                                      onClick={() => toggleSlotBloqueado(diaSel, s.id)}
+                                      className={`relative rounded-full transition-colors shrink-0 ${bloq ? 'bg-line' : 'bg-oso-600'}`}
+                                      style={{ height: '18px', width: '32px' }}
+                                      aria-label={bloq ? 'Franja bloqueada' : 'Franja disponible'}
+                                    >
+                                      <span className="absolute top-0.5 left-0.5 bg-white rounded-full transition-transform"
+                                        style={{ height: '14px', width: '14px', transform: bloq ? 'none' : 'translateX(14px)' }} />
+                                    </button>
+                                    <span className={`text-sm ${bloq ? 'text-mute line-through' : 'text-ink'}`}>
+                                      {s.etiqueta || hhmm(s.hora)}
+                                    </span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+
+                            <div className="text-[11px] uppercase tracking-wider text-mute mb-2">Bloquear un tramo de horas</div>
+                            <div className="flex gap-2 flex-wrap items-end">
+                              <input type="time" value={tramo.desde}
+                                onChange={e => setTramo(t => ({ ...t, desde: e.target.value }))} className={inputCls} />
+                              <span className="text-mute text-sm pb-1.5">a</span>
+                              <input type="time" value={tramo.hasta}
+                                onChange={e => setTramo(t => ({ ...t, hasta: e.target.value }))} className={inputCls} />
+                              <input type="text" placeholder="Motivo (opcional)" value={tramo.motivo}
+                                onChange={e => setTramo(t => ({ ...t, motivo: e.target.value }))}
+                                className={`${inputCls} flex-1 min-w-[140px]`} />
+                              <button onClick={() => agregarTramo(diaSel)}
+                                className="px-3 py-1.5 bg-canvas border border-line rounded-lg text-sm hover:bg-oso-50 transition-colors">
+                                Bloquear
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </section>
+
+              {/* Pendientes de confirmar, debajo del calendario */}
+              {porConfirmar.length > 0 && (
+                <section className="mt-6">
+                  <h2 className="font-display text-lg font-semibold mb-3">
+                    Por confirmar <span className="text-mute font-normal text-sm">({porConfirmar.length})</span>
+                  </h2>
+                  <div className="space-y-2.5">
+                    {porConfirmar.map(c => (
+                      <TarjetaCita key={c.id} c={c}
+                        personalizado={pedidosPersonalizados.has(c.pedido_id)}
+                        onEstado={cambiarEstado} />
+                    ))}
+                  </div>
+                </section>
+              )}
+            </>
+          ) : (
+            /* ══════════ LISTA ══════════ */
+            listaFutura.length === 0 ? (
+              <div className="text-center py-20 bg-surface border border-dashed border-line rounded-xl">
+                <p className="text-ink font-medium">No hay nada agendado.</p>
+                <p className="text-xs text-mute mt-1">
+                  Los encargos con fecha aparecerán aquí. Si esperabas ver algo, revisá los filtros de arriba.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-7">
+                {listaFutura.map(([fecha, delDia]) => (
+                  <div key={fecha}>
+                    <div className="flex items-baseline gap-3 mb-3">
+                      <h2 className="font-display text-lg font-semibold capitalize">{fechaLarga(fecha)}</h2>
+                      <span className="text-xs text-mute">
+                        {delDia.length} {delDia.length === 1 ? 'evento' : 'eventos'}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {delDia.map((e, k) =>
+                        e.cita ? (
+                          <TarjetaCita key={e.cita.id} c={e.cita} personalizado={e.personalizado} onEstado={cambiarEstado} />
+                        ) : (
+                          <div key={`b${k}`} className="bg-surface border border-line rounded-xl p-3 flex items-center gap-2.5">
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${CAPAS.bloqueo.punto}`} />
+                            <span className="text-sm flex-1">{e.etiqueta}</span>
+                            {e.bloqueo?.origen === 'google' && (
+                              <span className="text-[10px] text-mute">Google Calendar</span>
+                            )}
+                            {esDueno && e.bloqueo && (
+                              <button onClick={() => quitarBloqueo(e.bloqueo!.id)}
+                                className="text-mute hover:text-red-600 px-1">×</button>
+                            )}
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
           )}
         </>
       )}
@@ -478,150 +760,77 @@ export default function Agenda({ session }: { session: Session }) {
           </div>
         </section>
       )}
+    </div>
+  )
+}
 
-      {/* ══════════ DÍAS DISPONIBLES ══════════ */}
-      {tab === 'dias' && esDueno && (
-        <section className="bg-surface border border-line rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-display text-xl font-semibold tracking-tight capitalize">
-              {MESES[vista.mes]} {vista.anio}
-            </h2>
-            <div className="flex gap-1">
-              <button onClick={() => moverMes(-1)}
-                className="px-2.5 py-1 bg-canvas border border-line rounded-lg text-sm hover:bg-oso-50">‹</button>
-              <button onClick={() => moverMes(1)}
-                className="px-2.5 py-1 bg-canvas border border-line rounded-lg text-sm hover:bg-oso-50">›</button>
-            </div>
+// ── Tarjeta de cita, compartida por la lista y por "Por confirmar" ──
+function TarjetaCita({ c, personalizado, onEstado }: {
+  c: Cita
+  personalizado: boolean
+  onEstado: (id: string, estado: Cita['estado']) => void
+}) {
+  return (
+    <div className="bg-surface border border-line rounded-xl p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`w-2 h-2 rounded-full shrink-0 ${CAPAS[c.tipo].punto}`} />
+            <span className="text-sm font-medium">
+              {c.tipo === 'revision' ? 'Revisión' : 'Entrega'}
+            </span>
+            {personalizado && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-800 border border-violet-200">
+                ✦ personalizada
+              </span>
+            )}
+            {c.hora && <span className="text-xs text-mute tnum">{hhmm(c.hora)}</span>}
+            <span className={`text-[11px] px-2 py-0.5 rounded-full ${badge[c.estado]}`}>{c.estado}</span>
           </div>
 
-          <div className="grid grid-cols-7 gap-1 mb-1">
-            {DIAS_CORTOS.map((d, i) => (
-              <div key={i} className="text-center text-[10px] uppercase tracking-wider text-mute py-1">{d}</div>
-            ))}
-          </div>
+          <p className="text-sm mt-1.5">
+            {c.pedidos?.numero_pedido ?? '—'}
+            {c.pedidos?.clientes?.nombre ? ` · ${c.pedidos.clientes.nombre}` : ''}
+          </p>
+          <p className="text-xs text-mute">
+            {c.pedidos?.clientes?.telefono ?? ''}
+            {c.pedidos?.tipo_entrega === 'domicilio' && c.pedidos?.direccion_entrega
+              ? ` · ${c.pedidos.direccion_entrega}`
+              : c.pedidos?.tipo_entrega === 'recoger' ? ' · Recoge en el taller' : ''}
+          </p>
+          {c.notas && <p className="text-xs text-mute mt-1">🕐 {c.notas}</p>}
+        </div>
 
-          <div className="grid grid-cols-7 gap-1">
-            {grilla.map((fecha, i) => {
-              if (!fecha) return <div key={`v${i}`} />
-              const dia = Number(fecha.slice(8))
-              const dow = new Date(vista.anio, vista.mes, dia).getDay()
-              const cerradoSemana = diasSemana[dow] === true
-              const full = !!bloqueoDiaCompleto(fecha)
-              const parcial = bloqueosDelDia(fecha).some(b => b.slot_id || b.hora_desde)
-              const esHoy = fecha === hoyISO()
-              return (
-                <button
-                  key={fecha}
-                  onClick={() => { setDiaSel(fecha); setTramo({ desde: '', hasta: '', motivo: '' }) }}
-                  className={`relative aspect-square rounded-lg text-sm transition-colors border ${
-                    diaSel === fecha ? 'border-oso-600' : 'border-transparent'
-                  } ${
-                    full ? 'bg-red-100 text-red-700 line-through'
-                    : cerradoSemana ? 'bg-canvas text-mute'
-                    : 'bg-canvas/60 text-ink hover:bg-oso-50'
-                  } ${esHoy ? 'font-semibold' : ''}`}
-                >
-                  {dia}
-                  {parcial && !full && (
-                    <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-amber-500" />
-                  )}
-                </button>
-              )
-            })}
-          </div>
+        <div className="text-right shrink-0">
+          <p className="tnum text-sm font-medium">{formatCOP(c.pedidos?.total ?? 0)}</p>
+        </div>
+      </div>
 
-          <div className="flex gap-4 mt-3 text-[11px] text-mute flex-wrap">
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-red-100 inline-block" /> día cerrado</span>
-            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" /> bloqueo parcial</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-canvas border border-line inline-block" /> sin atención</span>
-          </div>
-
-          {diaSel && (
-            <div className="mt-5 pt-4 border-t border-line">
-              <h3 className="font-medium text-sm capitalize mb-3">{fechaLarga(diaSel)}</h3>
-
-              <div className="flex items-center gap-2.5 mb-4">
-                <button
-                  onClick={() => toggleDiaCompleto(diaSel)}
-                  className={`relative rounded-full transition-colors shrink-0 ${
-                    bloqueoDiaCompleto(diaSel) ? 'bg-red-500' : 'bg-line'}`}
-                  style={{ height: '22px', width: '40px' }}
-                  aria-label="Cerrar el día completo"
-                >
-                  <span className="absolute top-0.5 left-0.5 bg-white rounded-full transition-transform"
-                    style={{ height: '18px', width: '18px',
-                      transform: bloqueoDiaCompleto(diaSel) ? 'translateX(18px)' : 'none' }} />
-                </button>
-                <span className="text-sm">Cerrar todo el día</span>
-              </div>
-
-              {!bloqueoDiaCompleto(diaSel) && (
-                <>
-                  <div className="text-[11px] uppercase tracking-wider text-mute mb-2">Franjas de este día</div>
-                  <div className="space-y-1.5 mb-4">
-                    {slots.filter(s => s.activo).map(s => {
-                      const bloq = bloqueos.some(b => b.fecha === diaSel && b.slot_id === s.id)
-                      return (
-                        <div key={s.id} className="flex items-center gap-2.5 bg-canvas/50 border border-line rounded-lg px-2.5 py-1.5">
-                          <button
-                            onClick={() => toggleSlotBloqueado(diaSel, s.id)}
-                            className={`relative rounded-full transition-colors shrink-0 ${bloq ? 'bg-line' : 'bg-oso-600'}`}
-                            style={{ height: '18px', width: '32px' }}
-                            aria-label={bloq ? 'Franja bloqueada' : 'Franja disponible'}
-                          >
-                            <span className="absolute top-0.5 left-0.5 bg-white rounded-full transition-transform"
-                              style={{ height: '14px', width: '14px', transform: bloq ? 'none' : 'translateX(14px)' }} />
-                          </button>
-                          <span className={`text-sm ${bloq ? 'text-mute line-through' : 'text-ink'}`}>
-                            {s.etiqueta || hhmm(s.hora)}
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-
-                  <div className="text-[11px] uppercase tracking-wider text-mute mb-2">Bloquear un tramo de horas</div>
-                  <div className="flex gap-2 flex-wrap items-end">
-                    <input type="time" value={tramo.desde}
-                      onChange={e => setTramo(t => ({ ...t, desde: e.target.value }))} className={inputCls} />
-                    <span className="text-mute text-sm pb-1.5">a</span>
-                    <input type="time" value={tramo.hasta}
-                      onChange={e => setTramo(t => ({ ...t, hasta: e.target.value }))} className={inputCls} />
-                    <input type="text" placeholder="Motivo (opcional)" value={tramo.motivo}
-                      onChange={e => setTramo(t => ({ ...t, motivo: e.target.value }))}
-                      className={`${inputCls} flex-1 min-w-[140px]`} />
-                    <button onClick={() => agregarTramo(diaSel)}
-                      className="px-3 py-1.5 bg-canvas border border-line rounded-lg text-sm hover:bg-oso-50 transition-colors">
-                      Bloquear
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {bloqueosDelDia(diaSel).length > 0 && (
-                <div className="mt-4">
-                  <div className="text-[11px] uppercase tracking-wider text-mute mb-2">Bloqueos de este día</div>
-                  <div className="space-y-1.5">
-                    {bloqueosDelDia(diaSel).map(b => (
-                      <div key={b.id} className="flex items-center justify-between gap-2 text-xs bg-canvas/50 border border-line rounded-lg px-2.5 py-1.5">
-                        <span className="text-mute">
-                          {b.slot_id
-                            ? `Franja ${slots.find(s => s.id === b.slot_id)?.etiqueta ?? ''}`
-                            : b.hora_desde
-                              ? `${hhmm(b.hora_desde)} – ${hhmm(b.hora_hasta)}`
-                              : 'Día completo'}
-                          {b.motivo ? ` · ${b.motivo}` : ''}
-                          {b.origen === 'google' ? ' · Google Calendar' : ''}
-                        </span>
-                        <button onClick={() => quitarBloqueo(b.id)} className="text-mute hover:text-red-600">×</button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+      {(c.estado === 'propuesta' || c.estado === 'confirmada') && (
+        <div className="flex gap-2 mt-3 pt-3 border-t border-line">
+          {c.estado === 'propuesta' && (
+            <button
+              onClick={() => onEstado(c.id, 'confirmada')}
+              className="px-3 py-1.5 bg-oso-600 text-white rounded-lg text-xs font-medium hover:bg-oso-700 transition-colors"
+            >
+              Confirmar cita
+            </button>
           )}
-        </section>
+          {c.estado === 'confirmada' && (
+            <button
+              onClick={() => onEstado(c.id, 'cumplida')}
+              className="px-3 py-1.5 bg-oso-100 text-oso-800 rounded-lg text-xs hover:bg-oso-200 transition-colors"
+            >
+              Marcar cumplida
+            </button>
+          )}
+          <button
+            onClick={() => { if (confirm('¿Cancelar esta cita?')) onEstado(c.id, 'cancelada') }}
+            className="px-3 py-1.5 text-xs text-mute hover:text-red-600 transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
       )}
     </div>
   )
