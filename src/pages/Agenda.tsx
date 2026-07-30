@@ -343,9 +343,14 @@ export default function Agenda({ session }: { session: Session }) {
   function estadoDelDia(fecha: string): EstadoDia {
     const dow = new Date(`${fecha}T12:00:00`).getDay()
     if (diasSemana[dow] === true) return 'sin_atencion'
-    if (bloqueoDiaCompleto(fecha)) return 'cerrado'
 
+    // Ojo: acá NO se puede usar bloqueoDiaCompleto(). Esa función se declara
+    // más abajo con const, y este useMemo corre durante el render, así que
+    // caeríamos en la zona muerta temporal (ReferenceError y pantalla en
+    // blanco). Se calcula igual, pero en línea.
     const delDia = bloqueos.filter(b => b.fecha === fecha)
+    if (delDia.some(b => !b.slot_id && !b.hora_desde)) return 'cerrado'
+
     // Solo las franjas encendidas en la planilla cuentan como capacidad
     const activas = slots.filter(s => s.activo)
     if (activas.length === 0) return 'sin_atencion'

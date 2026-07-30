@@ -31,6 +31,11 @@ export default function ZonasDomicilio({ session: _s }: { session: Session }) {
   const [nuevoBarrio, setNuevoBarrio] = useState('')
   const [nuevoMotivo, setNuevoMotivo] = useState('')
 
+  // Dirección y ciudad de la configuración, para poder ubicar por dirección
+  const [direccion, setDireccion] = useState('')
+  const [ciudad, setCiudad] = useState('')
+  const [ubicando, setUbicando] = useState(false)
+
   async function cargarTodo() {
     const [cfg, rng, vet] = await Promise.all([
       supabase.rpc('obtener_config_general'),
@@ -42,6 +47,8 @@ export default function ZonasDomicilio({ session: _s }: { session: Session }) {
     const d = cfg.data as any
     setLat(d.lat != null ? Number(d.lat) : null)
     setLng(d.lng != null ? Number(d.lng) : null)
+    setDireccion(d.direccion ?? '')
+    setCiudad(d.ciudad ?? '')
 
     if (!rng.error && rng.data) {
       setRangos((rng.data as any[]).map(r => ({
@@ -72,6 +79,28 @@ export default function ZonasDomicilio({ session: _s }: { session: Session }) {
     if (error) { setMsgUbic('❌ ' + error.message); return }
     setMsgUbic('✅ Ubicación guardada')
     setTimeout(() => setMsgUbic(null), 2500)
+  }
+
+  async function ubicarPorDireccion() {
+    if (!direccion.trim()) {
+      setMsgUbic('Primero escribí la dirección en Configuración.')
+      return
+    }
+    setUbicando(true); setMsgUbic(null)
+    const { data, error } = await supabase.functions.invoke('geocodificar', {
+      body: { direccion: direccion.trim(), ciudad: ciudad.trim() },
+    })
+    setUbicando(false)
+
+    const res = data as any
+    if (error || !res?.ok) {
+      setMsgUbic(res?.error ?? error?.message ?? 'No se pudo ubicar la dirección.')
+      return
+    }
+    setLat(Number(res.lat)); setLng(Number(res.lng))
+    setMsgUbic(res.exacta
+      ? `Ubicado en ${res.direccion_formateada}. Revisá la chincheta y guardá.`
+      : `Ubicación ${res.precision}. Ajustá la chincheta a mano antes de guardar.`)
   }
 
   // ───── Rangos ─────
@@ -161,21 +190,40 @@ export default function ZonasDomicilio({ session: _s }: { session: Session }) {
           alturaPx={340}
         />
 
-        <div className="flex items-center justify-between mt-3 gap-3 flex-wrap">
-          <div className="text-xs text-mute tnum">
-            {lat != null && lng != null
-              ? <>Lat: {lat.toFixed(6)} · Lng: {lng.toFixed(6)}</>
-              : 'Sin ubicación marcada'}
+        <div className="mt-3 space-y-2">
+          <div className="text-xs tnum">
+            {lat != null && lng != null ? (
+              <span className="text-mute">Lat: {lat.toFixed(6)} · Lng: {lng.toFixed(6)}</span>
+            ) : (
+              // La chincheta que se ve es el centro por defecto de Tuluá, no una
+              // ubicación guardada. Decirlo evita creer que ya quedó marcada.
+              <span className="text-amber-700">
+                La chincheta está en el centro de Tuluá por defecto — todavía no marcaste el local.
+                Arrastrala, hacé clic en el mapa, o usá el botón de abajo.
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-3">
-            {msgUbic && <span className="text-xs font-medium">{msgUbic}</span>}
+
+          <div className="flex items-center justify-between gap-3 flex-wrap">
             <button
-              onClick={guardarUbicacion}
-              disabled={guardandoUbic || lat == null}
-              className="text-sm bg-oso-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-oso-700 disabled:opacity-50 transition-colors"
+              onClick={ubicarPorDireccion}
+              disabled={ubicando || !direccion.trim()}
+              className="text-xs px-3 py-1.5 rounded-lg bg-oso-100 text-oso-800 hover:bg-oso-200 disabled:opacity-50 transition-colors"
+              title={direccion ? `Buscar: ${direccion}` : 'Falta la dirección en Configuración'}
             >
-              {guardandoUbic ? 'Guardando…' : 'Guardar ubicación'}
+              {ubicando ? 'Ubicando…' : 'Ubicar por la dirección'}
             </button>
+
+            <div className="flex items-center gap-3">
+              {msgUbic && <span className="text-xs font-medium">{msgUbic}</span>}
+              <button
+                onClick={guardarUbicacion}
+                disabled={guardandoUbic || lat == null}
+                className="text-sm bg-oso-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-oso-700 disabled:opacity-50 transition-colors"
+              >
+                {guardandoUbic ? 'Guardando…' : 'Guardar ubicación'}
+              </button>
+            </div>
           </div>
         </div>
       </section>
