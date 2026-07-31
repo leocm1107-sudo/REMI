@@ -201,6 +201,10 @@ const SIN_TINTE = { seccion: 'bg-white', celda: 'bg-white hover:bg-slate-50', ce
 export default function Agenda({ session }: { session: Session }) {
   const [tab, setTab] = useState<'agenda' | 'slots'>('agenda')
   const [modo, setModo] = useState<'calendario' | 'lista'>('calendario')
+  // "Screen": vista limpia del calendario para captura de pantalla — solo
+  // los símbolos de disponibilidad sobre el vino sólido, sin franjas ni
+  // bloqueos ni conteos.
+  const [screen, setScreen] = useState(false)
   const [esDueno, setEsDueno] = useState(false)
   const [restauranteId, setRestauranteId] = useState<string>('')
 
@@ -550,6 +554,16 @@ export default function Agenda({ session }: { session: Session }) {
     setDiaSel(hoyISO())
   }
 
+  // Al activar Screen, la capa de disponibilidad se enciende sola: sin ella
+  // no habría ningún símbolo que mostrar.
+  function toggleScreen() {
+    setScreen(s => {
+      const nuevo = !s
+      if (nuevo) setCapas(p => ({ ...p, disponibilidad: true }))
+      return nuevo
+    })
+  }
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-6">
       <div className="mb-5">
@@ -648,18 +662,35 @@ export default function Agenda({ session }: { session: Session }) {
               })}
             </div>
 
-            <div className="flex items-center gap-1 bg-canvas border border-line rounded-full p-0.5">
-              {([['calendario', 'Calendario'], ['lista', 'Lista']] as const).map(([v, label]) => (
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1 bg-canvas border border-line rounded-full p-0.5">
+                {([['calendario', 'Calendario'], ['lista', 'Lista']] as const).map(([v, label]) => (
+                  <button
+                    key={v}
+                    onClick={() => setModo(v)}
+                    className={`px-3 py-1 rounded-full text-xs transition-colors ${
+                      modo === v ? 'bg-oso-800 text-white' : 'text-mute hover:text-ink'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {modo === 'calendario' && (
                 <button
-                  key={v}
-                  onClick={() => setModo(v)}
-                  className={`px-3 py-1 rounded-full text-xs transition-colors ${
-                    modo === v ? 'bg-oso-800 text-white' : 'text-mute hover:text-ink'
+                  onClick={toggleScreen}
+                  aria-pressed={screen}
+                  title="Vista limpia: solo los símbolos de disponibilidad, sin franjas ni bloqueos"
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    screen
+                      ? 'bg-oso-800 text-white border-oso-800'
+                      : 'bg-canvas text-mute border-line hover:text-ink'
                   }`}
                 >
-                  {label}
+                  Screen
                 </button>
-              ))}
+              )}
             </div>
           </div>
 
@@ -725,7 +756,9 @@ export default function Agenda({ session }: { session: Session }) {
                             tabIndex={0}
                             onClick={() => { setDiaSel(fecha); setTramo({ desde: '', hasta: '', motivo: '' }) }}
                             onKeyDown={ev => { if (ev.key === 'Enter') { setDiaSel(fecha); setTramo({ desde: '', hasta: '', motivo: '' }) } }}
-                            style={{ background: cerradoSemana ? tinte.celdaCerrada : tinte.celda }}
+                            style={{ background: screen
+                              ? (cerradoSemana ? VINO.fondoCerrado : VINO.fondo)
+                              : (cerradoSemana ? tinte.celdaCerrada : tinte.celda) }}
                             className={`group relative text-left align-top min-h-[104px] p-1.5 transition-colors cursor-pointer hover:brightness-110 ${
                               diaSel === fecha ? 'ring-2 ring-inset ring-white/70' : ''
                             }`}
@@ -745,7 +778,9 @@ export default function Agenda({ session }: { session: Session }) {
                               }[est]
 
                               return (
-                                <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none transition-opacity duration-150 group-hover:opacity-15"
+                                <div className={`absolute inset-0 z-20 flex items-center justify-center pointer-events-none transition-opacity duration-150 ${
+                                  screen ? '' : 'group-hover:opacity-15'
+                                }`}
                                   title={pinta.titulo}>
                                   <pinta.Icono className={`w-15 h-15 sm:w-16 sm:h-16 ${pinta.color}`} />
                                 </div>
@@ -760,25 +795,27 @@ export default function Agenda({ session }: { session: Session }) {
                                   : { background: 'rgba(255,255,255,0.92)', color: VINO.fondo,
                                       opacity: cerradoSemana ? 0.55 : 1 }}
                               >{dia}</span>
-                              {resto > 0 && <span className="text-[9px] text-white/60">+{resto}</span>}
+                              {!screen && resto > 0 && <span className="text-[9px] text-white/60">+{resto}</span>}
                             </div>
 
-                            <div className="space-y-0.5 relative z-10">
-                              {visibles.map((e, k) => (
-                                <div key={k}
-                                  onClick={ev => { ev.stopPropagation(); setEventoModal(e) }}
-                                  style={{ background: 'rgba(255,255,255,0.13)', borderColor: 'rgba(255,255,255,0.22)' }}
-                                  className="flex items-center gap-1 rounded px-1 py-0.5 text-[10px] leading-tight border cursor-pointer text-white hover:bg-white/25 transition-colors">
-                                  <span className="w-1.5 h-1.5 rounded-full shrink-0"
-                                    style={{ background: CAPA_COLOR[e.capa].hex }} />
-                                  {e.hora && <span className="tnum shrink-0">{horaCorta(e.hora)}</span>}
-                                  <span className="truncate">
-                                    {e.personalizado && <span title="Torta personalizada">✦ </span>}
-                                    {e.etiqueta}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
+                            {!screen && (
+                              <div className="space-y-0.5 relative z-10">
+                                {visibles.map((e, k) => (
+                                  <div key={k}
+                                    onClick={ev => { ev.stopPropagation(); setEventoModal(e) }}
+                                    style={{ background: 'rgba(255,255,255,0.13)', borderColor: 'rgba(255,255,255,0.22)' }}
+                                    className="flex items-center gap-1 rounded px-1 py-0.5 text-[10px] leading-tight border cursor-pointer text-white hover:bg-white/25 transition-colors">
+                                    <span className="w-1.5 h-1.5 rounded-full shrink-0"
+                                      style={{ background: CAPA_COLOR[e.capa].hex }} />
+                                    {e.hora && <span className="tnum shrink-0">{horaCorta(e.hora)}</span>}
+                                    <span className="truncate">
+                                      {e.personalizado && <span title="Torta personalizada">✦ </span>}
+                                      {e.etiqueta}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )
                       })}
