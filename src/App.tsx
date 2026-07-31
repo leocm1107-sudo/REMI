@@ -20,16 +20,31 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const [recuperando, setRecuperando] = useState(false)
+  const [estadoAcceso, setEstadoAcceso] = useState<string | null>(null)
+  const [verificandoAcceso, setVerificandoAcceso] = useState(false)
+
+  const verificarAcceso = async () => {
+    setVerificandoAcceso(true)
+    const { data, error } = await supabase.rpc('mi_estado_acceso')
+    setEstadoAcceso(error ? 'pendiente' : (data as string))
+    setVerificandoAcceso(false)
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
       setLoading(false)
+      if (data.session) verificarAcceso()
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s)
       if (event === 'PASSWORD_RECOVERY') {
         setRecuperando(true)
+      }
+      if (s) {
+        verificarAcceso()
+      } else {
+        setEstadoAcceso(null)
       }
     })
     return () => subscription.unsubscribe()
@@ -58,6 +73,34 @@ export default function App() {
   }
 
   if (!session) return <Login />
+
+  if (verificandoAcceso || estadoAcceso === null) {
+    return (
+      <div className="min-h-screen grid place-items-center text-mute text-sm">
+        Verificando acceso…
+      </div>
+    )
+  }
+
+  if (estadoAcceso !== 'aprobado') {
+    const mensaje =
+      estadoAcceso === 'rechazado'
+        ? 'Tu acceso a este panel fue rechazado. Contacta al dueño del restaurante si crees que es un error.'
+        : 'Tu cuenta está pendiente de aprobación. El dueño del restaurante debe aprobarte antes de que puedas entrar.'
+    return (
+      <div className="min-h-screen grid place-items-center text-center px-4">
+        <div className="max-w-sm space-y-4">
+          <p className="text-sm text-mute">{mensaje}</p>
+          <button
+            className="text-sm underline text-mute"
+            onClick={() => supabase.auth.signOut()}
+          >
+            Cerrar sesión
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <BrowserRouter>

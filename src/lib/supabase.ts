@@ -16,5 +16,8 @@ export const supabase = createClient(url, anonKey, {
     detectSessionInUrl: true
   }
 })
-// Expón temporal para debug
-;(window as any).supabase = supabase
+// Debug: solo en desarrollo local. Vite elimina este bloque del build
+// de producción porque import.meta.env.DEV es una constante en build time.
+if (import.meta.env.DEV) {
+  ;(window as any).supabase = supabase
+}
