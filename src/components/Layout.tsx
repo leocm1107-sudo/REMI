@@ -17,6 +17,7 @@ const SECCIONES = [
   { to: '/menu',          label: 'Menú',              end: false, soloDueno: false },
   { to: '/importar',      label: 'Importar menú',     end: false, soloDueno: true },
   { to: '/agenda',        label: 'Agenda',            end: false, soloDueno: false, feature: 'agendamiento' },
+  { to: '/citas',         label: 'Citas',             end: false, soloDueno: false, feature: 'agenda_servicios' },
   { to: '/logistica',     label: 'Logística',         end: false, soloDueno: false },
   { to: '/zonas',         label: 'Zonas de domicilio', end: false, soloDueno: true },
   { to: '/clientes',      label: 'Clientes',          end: false, soloDueno: true },
@@ -27,6 +28,7 @@ const SECCIONES = [
 
 export default function Layout({ session }: { session: Session }) {
   const [perfil, setPerfil]   = useState<Perfil | null>(null)
+  const [esSuperadmin, setEsSuperadmin] = useState(false)
   const [cargando, setCargando] = useState(true)
   const [menuAbierto, setMenuAbierto] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -44,6 +46,11 @@ export default function Layout({ session }: { session: Session }) {
         if (data) setPerfil(data as Perfil)
         setCargando(false)
       })
+  }, [session.user.id])
+
+  // Plataforma: solo para quien esté en plataforma_admins
+  useEffect(() => {
+    supabase.rpc('es_superadmin').then(({ data }) => setEsSuperadmin(data === true))
   }, [session.user.id])
 
   useEffect(() => { setMenuAbierto(false) }, [location.pathname])
@@ -75,10 +82,15 @@ export default function Layout({ session }: { session: Session }) {
   if (estado === 'rechazado') return <PantallaEspera onSalir={cerrarSesion} tipo="rechazado" />
 
   const esDueno = perfil?.rol === 'dueno'
-  const visibles = SECCIONES.filter(s =>
-    (!s.soloDueno || esDueno) &&
-    (!(s as any).feature || marca.features?.[(s as any).feature] === true)
-  )
+  const visibles = [
+    ...SECCIONES.filter(s =>
+      (!s.soloDueno || esDueno) &&
+      (!(s as any).feature || marca.features?.[(s as any).feature] === true)
+    ),
+    ...(esSuperadmin
+      ? [{ to: '/admin', label: 'Plataforma', end: false, soloDueno: false }]
+      : []),
+  ]
 
   return (
     <div className="min-h-screen flex flex-col">

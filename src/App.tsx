@@ -15,6 +15,8 @@ import Configuracion from './pages/Configuracion'
 import Layout from './components/Layout'
 import Agenda from './pages/Agenda'
 import Personalizados from './pages/Personalizados'
+import Citas from './pages/Citas'
+import Admin from './pages/Admin'
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -111,6 +113,8 @@ export default function App() {
           <Route path="menu" element={<Menu session={session} />} />
           <Route path="importar" element={<ImportarMenu session={session} />} />
           <Route path="agenda" element={<Agenda session={session} />} />
+          <Route path="citas" element={<Citas session={session} />} />
+          <Route path="admin" element={<Admin session={session} />} />
           <Route path="logistica" element={<Logistica session={session} />} />
           <Route path="zonas" element={<ZonasDomicilio session={session} />} />
           <Route path="clientes" element={<Clientes session={session} />} />
