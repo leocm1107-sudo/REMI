@@ -1,3 +1,5 @@
+import { type Vocab } from './vocabulario'
+
 export type EstadoPedido =
   | 'cotizado'
   | 'confirmado'
@@ -86,12 +88,23 @@ const LABEL_AGENDAMIENTO: Partial<Record<EstadoPedido, string>> = {
   preparando: 'En preparación',
 }
 
-export function infoEstado(estado: string, agendamiento = false) {
+// El segundo parámetro admite las dos formas a propósito:
+//   · boolean → comportamiento de siempre (agendamiento sí/no)
+//   · Vocab   → toma la etiqueta del vocabulario del negocio
+// Así los componentes que todavía pasan un boolean siguen funcionando
+// mientras se van migrando uno por uno.
+export function infoEstado(estado: string, opt: boolean | Vocab = false) {
   const base = ESTADOS_INFO[estado as EstadoPedido] ?? {
     label: estado || 'Desconocido',
     chip: 'bg-purple-100 text-purple-800 ring-purple-200'
   }
-  const override = agendamiento ? LABEL_AGENDAMIENTO[estado as EstadoPedido] : undefined
+
+  if (opt && typeof opt === 'object') {
+    const label = opt.estados?.[estado]
+    return label ? { ...base, label } : base
+  }
+
+  const override = opt ? LABEL_AGENDAMIENTO[estado as EstadoPedido] : undefined
   return override ? { ...base, label: override } : base
 }
 // El siguiente estado DEPENDE del tipo de entrega.

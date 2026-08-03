@@ -6,7 +6,7 @@ import { ESTADOS_INFO, type EstadoPedido, type Pedido } from '../lib/types'
 import PedidoCard from '../components/PedidoCard'
 import PedidoDetalle from '../components/PedidoDetalle'
 import NuevoPedidoModal from '../components/NuevoPedidoModal'
-import { useMarca } from '../lib/tema'
+import { useMarca, useVocab } from '../lib/tema'
 
 type Filtro = 'activos' | 'todos' | EstadoPedido
 
@@ -25,6 +25,7 @@ export default function Pedidos({ session }: { session: Session }) {
   const [cargando, setCargando]         = useState(true)
   const [restauranteId, setRestauranteId] = useState<string | null>(null)
   const marca = useMarca()
+  const V = useVocab()
   // 1) Restaurante del usuario logueado (multi-tenant)
   useEffect(() => {
     let activo = true
@@ -162,16 +163,18 @@ export default function Pedidos({ session }: { session: Session }) {
     setSeleccionado(prev => prev && prev.id === p.id ? { ...prev, estado: nuevoEstado } : prev)
   }
 
-  const filtros: { id: Filtro; label: string }[] = [
+  const filtros: { id: Filtro; label: string }[] = ([
     { id: 'activos',       label: 'Activos' },
     { id: 'cotizado',      label: 'Cotizados' },
     { id: 'confirmado',    label: 'Confirmados' },
-    { id: 'preparando',    label: marca.features?.agendamiento ? 'En preparación' : 'En cocina' },
-    { id: 'en_camino',     label: 'En camino' },
-    { id: 'listo_recoger', label: 'Para recoger' },
-    { id: 'entregado',     label: 'Entregados' },
+    { id: 'preparando',    label: V.estados.preparando },
+    { id: 'en_camino',     label: V.estados.en_camino },
+    { id: 'listo_recoger', label: V.estados.listo_recoger },
+    { id: 'entregado',     label: V.estados.entregado + 's' },
     { id: 'todos',         label: 'Todos' }
-  ]
+  ] as { id: Filtro; label: string }[])
+    // Sin domicilio, "en camino" es un estado que nunca va a existir
+    .filter(f => f.id !== 'en_camino' || marca.features?.domicilio !== false)
 
   const hoy = new Date().toLocaleDateString('es-CO', {
     weekday: 'long', day: 'numeric', month: 'long'
@@ -181,21 +184,21 @@ export default function Pedidos({ session }: { session: Session }) {
     <>
       <div className="mb-7 flex items-start justify-between gap-4">
         <div>
-          <h1 className="font-display text-4xl font-semibold tracking-tight mb-1">Pedidos</h1>
+          <h1 className="font-display text-4xl font-semibold tracking-tight mb-1">{V.Pedidos}</h1>
           <p className="text-mute text-sm capitalize">{hoy}</p>
         </div>
         <button
           onClick={() => setCreando(true)}
           className="shrink-0 px-4 py-2 bg-oso-600 text-white rounded-lg text-sm font-medium hover:bg-oso-700 transition-colors"
         >
-          + Nuevo pedido
+          + {V.nuevoPedido}
         </button>
       </div>
 
       <div className="grid grid-cols-3 gap-3 mb-8">
         <Stat label="Activos"      value={stats.activos.toString()} />
-        <Stat label="Entregados"   value={stats.entregadosHoy.toString()} />
-        <Stat label="Vendido hoy"  value={formatCOP(stats.totalHoy)} />
+        <Stat label={V.estados.entregado + 's'} value={stats.entregadosHoy.toString()} />
+        <Stat label={V.vendidoHoy}              value={formatCOP(stats.totalHoy)} />
       </div>
 
       <div className="flex gap-1.5 mb-6 overflow-x-auto pb-2 -mx-2 px-2 scrollbar-none">
@@ -216,14 +219,12 @@ export default function Pedidos({ session }: { session: Session }) {
       </div>
 
       {cargando ? (
-        <div className="text-center text-mute py-20 text-sm">Cargando pedidos…</div>
+        <div className="text-center text-mute py-20 text-sm">{V.cargando}</div>
       ) : filtrados.length === 0 ? (
         <div className="text-center py-20 bg-surface border border-dashed border-line rounded-xl">
           <div className="text-3xl mb-3">{marca.logo_emoji}</div>
-          <p className="text-ink font-medium">No hay pedidos aquí.</p>
-          <p className="text-xs text-mute mt-1">
-            Cuando entren por WhatsApp aparecerán solos.
-          </p>
+          <p className="text-ink font-medium">{V.vacio}</p>
+          <p className="text-xs text-mute mt-1">{V.vacioAyuda}</p>
         </div>
       ) : (
         <div className="space-y-2.5">

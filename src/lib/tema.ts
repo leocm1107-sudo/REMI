@@ -5,6 +5,7 @@
 // Usa la función marca_publica (security definer): funciona SIN sesión iniciada,
 // así el login y la pantalla de restablecer también muestran la marca correcta.
 import { supabase } from './supabase'
+import { vocabDe, type Vocab } from './vocabulario'
 
 const RESTAURANTE_ID = import.meta.env.VITE_RESTAURANTE_ID as string
 
@@ -14,6 +15,9 @@ export type Marca = {
   logo_url: string | null
   imagen_fondo_url: string | null
   features: Record<string, boolean>
+  // De qué habla este panel: 'restaurante' | 'reposteria' | 'salon'
+  vocabulario: string
+  vocab: Vocab
 }
 
 // Default NEUTRO: si algo falla, no aparece la marca de otro cliente
@@ -23,6 +27,8 @@ export let marca: Marca = {
   logo_url: null,
   imagen_fondo_url: null,
   features: {},
+  vocabulario: 'restaurante',
+  vocab: vocabDe('restaurante'),
 }
 
 // ── utilidades de color ──────────────────────────────────────────────
@@ -59,14 +65,18 @@ export function aplicarTema(r: {
   color_primario?: string | null
   color_botones?: string | null
   color_fondo?: string | null
+  vocabulario?: string | null
   features?: Record<string, boolean>
 }) {
+  const clave = r.vocabulario ?? 'restaurante'
   marca = {
     nombre: r.nombre ?? marca.nombre,
     logo_emoji: r.logo_emoji ?? marca.logo_emoji,
     logo_url: r.logo_url ?? null,
     imagen_fondo_url: r.imagen_fondo_url ?? null,
     features: (r as any).features ?? {},
+    vocabulario: clave,
+    vocab: vocabDe(clave),
   }
 
   const primario = r.color_primario ? hexARgb(r.color_primario) : null
@@ -125,4 +135,9 @@ export function useMarca(): Marca {
     return () => window.removeEventListener('marca', f)
   }, [])
   return m
+}
+
+// Atajo para los componentes que solo necesitan las palabras
+export function useVocab(): Vocab {
+  return useMarca().vocab
 }
