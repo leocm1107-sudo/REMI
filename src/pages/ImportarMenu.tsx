@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { useVocab } from '../lib/tema'
 import Papa from 'papaparse'
 
 type FilaCSV = {
@@ -38,6 +39,7 @@ Bebidas,Jugo Natural,Jugo de fruta natural,6000,bebida,si,,jugo natural fruta,"f
 Adicionales,Papas Fritas,Porción de papas a la francesa,8000,acompanamiento,si,,papas fritas,"papa,sal"`
 
 export default function ImportarMenu({ session: _s }: { session: Session }) {
+  const V = useVocab()
   const [platos, setPlatos]       = useState<PlatoParseado[]>([])
   const [errores, setErrores]     = useState<string[]>([])
   const [nombreArchivo, setNombreArchivo] = useState('')
@@ -216,7 +218,7 @@ function onInputChangeIA(e: React.ChangeEvent<HTMLInputElement>) {
   return (
     <div className="max-w-3xl">
       <div className="mb-7">
-        <h1 className="font-display text-4xl font-semibold tracking-tight mb-1">Importar menú</h1>
+        <h1 className="font-display text-4xl font-semibold tracking-tight mb-1">Importar {V.carta}</h1>
         <p className="text-mute text-sm">
           Sube un archivo CSV con el menú completo. Reemplaza todo el menú actual.
         </p>
@@ -244,7 +246,7 @@ function onInputChangeIA(e: React.ChangeEvent<HTMLInputElement>) {
       <section className="bg-surface border border-line rounded-xl p-5 mb-4">
   <div className="flex items-center gap-3 mb-2">
     <span className="w-6 h-6 rounded-full bg-oso-100 text-oso-800 grid place-items-center text-xs font-semibold">2</span>
-    <h2 className="font-display text-lg font-semibold tracking-tight">Sube tu menú</h2>
+    <h2 className="font-display text-lg font-semibold tracking-tight">Sube tu {V.carta}</h2>
   </div>
   <div className="ml-9 flex gap-2 mb-3">
     <button onClick={() => setModo('csv')} className={`text-xs px-3 py-1.5 rounded-lg border ${modo === 'csv' ? 'bg-oso-600 text-white border-oso-600' : 'border-line text-mute'}`}>Archivo CSV</button>
@@ -258,7 +260,7 @@ function onInputChangeIA(e: React.ChangeEvent<HTMLInputElement>) {
       <>
         <input type="file" accept="image/*,application/pdf" onChange={onInputChangeIA} disabled={procesandoIA}
           className="block w-full text-sm text-mute file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border file:border-line file:bg-canvas file:text-ink file:font-medium file:cursor-pointer hover:file:border-oso-400 disabled:opacity-50" />
-        {procesandoIA && <p className="text-xs text-mute mt-2">Leyendo el menú con IA, un momento…</p>}
+        {procesandoIA && <p className="text-xs text-mute mt-2">Leyendo {V.carta} con IA, un momento…</p>}
       </>
     )}
     {nombreArchivo && !procesandoIA && (
@@ -271,8 +273,8 @@ function onInputChangeIA(e: React.ChangeEvent<HTMLInputElement>) {
       <details className="bg-surface border border-line rounded-xl p-4 mb-4 text-sm">
         <summary className="cursor-pointer font-medium text-mute">¿Qué columnas debe tener el CSV?</summary>
         <div className="mt-3 space-y-1.5 text-mute">
-          <p><b className="text-ink">categoria</b> — grupo del plato (ej. Hamburguesas). Obligatorio.</p>
-          <p><b className="text-ink">nombre</b> — nombre del plato. Obligatorio.</p>
+          <p><b className="text-ink">categoria</b> — grupo del {V.producto}. Obligatorio.</p>
+          <p><b className="text-ink">nombre</b> — nombre del {V.producto}. Obligatorio.</p>
           <p><b className="text-ink">descripcion</b> — texto descriptivo.</p>
           <p><b className="text-ink">precio</b> — solo números, en pesos (ej. 18000).</p>
           <p><b className="text-ink">tipo</b> — comida, bebida, acompañamiento, etc.</p>
@@ -339,7 +341,7 @@ function onInputChangeIA(e: React.ChangeEvent<HTMLInputElement>) {
           ) : (
             <div className="space-y-3">
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <p className="text-sm text-red-900 font-medium mb-1">⚠ Esto reemplazará todo el menú</p>
+                <p className="text-sm text-red-900 font-medium mb-1">⚠ Esto reemplazará {V.carta} completa</p>
                 <p className="text-xs text-red-800">
                   Se eliminará el menú actual del restaurante y se reemplazará por los {platos.length} platos del archivo. Esta acción no se puede deshacer.
                 </p>

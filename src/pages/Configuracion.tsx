@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import NumerosBloqueados from '../components/NumerosBloqueados'
 import GoogleCalendar from '../components/GoogleCalendar'
+import { useMarca, useVocab } from '../lib/tema'
 
 type ConfigForm = {
   nombre: string
@@ -28,6 +29,8 @@ const VACIO: ConfigForm = {
 }
 
 export default function Configuracion({ session: _session }: { session: Session }) {
+  const V = useVocab()
+  const marca = useMarca()
   const [form, setForm]         = useState<ConfigForm>(VACIO)
   const [original, setOriginal] = useState<ConfigForm>(VACIO)
   const [cargando, setCargando] = useState(true)
@@ -171,17 +174,17 @@ export default function Configuracion({ session: _session }: { session: Session 
       <div className="mb-7">
         <h1 className="font-display text-4xl font-semibold tracking-tight mb-1">Configuración</h1>
         <p className="text-mute text-sm">
-          Datos del restaurante. Los horarios y tiempos se ajustan en Logística.
+          Datos {V.negocio === 'salón' ? 'del salón' : `del ${V.negocio}`}. Los horarios y tiempos se ajustan en Logística.
         </p>
       </div>
 
       <div className="space-y-6">
         {/* Identidad */}
-        <Seccion titulo="Identidad" descripcion="Cómo se presenta tu restaurante al cliente.">
-          <Campo label="Nombre del restaurante" requerido>
+        <Seccion titulo="Identidad" descripcion={`Cómo se presenta ${V.elNegocio} al ${V.cliente}.`}>
+          <Campo label={`Nombre ${V.negocio === 'salón' ? 'del salón' : `del ${V.negocio}`}`} requerido>
             <input className="input" value={form.nombre} onChange={e => set('nombre', e.target.value)} />
           </Campo>
-          <Campo label="Dirección física" ayuda="La que el bot da cuando el cliente recoge.">
+          <Campo label="Dirección física" ayuda={`La que el bot da cuando ${V.negocio === 'salón' ? 'la clienta llega' : 'el cliente recoge'}.`}>
             <input className="input" value={form.direccion} onChange={e => set('direccion', e.target.value)} />
           </Campo>
           <div className="grid grid-cols-2 gap-3">
@@ -195,6 +198,7 @@ export default function Configuracion({ session: _session }: { session: Session 
         </Seccion>
 
         {/* Domicilio */}
+        {marca.features?.domicilio !== false && (
         <Seccion titulo="Domicilio" descripcion="Cobro y zona de entrega.">
           <div className="grid grid-cols-2 gap-3">
             <Campo label="Tarifa base" ayuda="En pesos. Punto de partida del cobro.">
@@ -258,10 +262,11 @@ export default function Configuracion({ session: _session }: { session: Session 
             )}
           </div>
         </Seccion>
+        )}
 
         {/* Operación */}
         <Seccion titulo="Operación" descripcion="Datos internos del negocio.">
-          <Campo label="Teléfono del jefe" ayuda="A este número llegan las notificaciones de pedidos. Con código país (ej. 573...).">
+          <Campo label="Teléfono del jefe" ayuda={`A este número llegan las notificaciones de ${V.pedidos}. Con código país (ej. 573...).`}>
             <input className="input tnum" value={form.telefono_jefe} onChange={e => set('telefono_jefe', e.target.value)} placeholder="573001234567" />
           </Campo>
         </Seccion>
@@ -280,10 +285,10 @@ export default function Configuracion({ session: _session }: { session: Session 
               <input className="input" value={form.tono_bot} onChange={e => set('tono_bot', e.target.value)} placeholder="cálido y directo" />
             </Campo>
           </div>
-          <Campo label="Mensaje de bienvenida" ayuda="Lo primero que ve un cliente nuevo.">
+          <Campo label="Mensaje de bienvenida" ayuda={`Lo primero que ve ${V.cliente === 'clienta' ? 'una clienta nueva' : 'un cliente nuevo'}.`}>
             <textarea className="input" rows={2} value={form.mensaje_bienvenida}
               onChange={e => set('mensaje_bienvenida', e.target.value)}
-              placeholder="¡Hola! Bienvenido a Don Oso 🐻 ¿Qué te provoca hoy?" />
+              placeholder={V.bienvenidaEjemplo} />
           </Campo>
         </Seccion>
       </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { cn, formatCOP } from '../lib/utils'
+import { useVocab } from '../lib/tema'
 
 type Props = {
   clienteId: string
@@ -45,6 +46,7 @@ const ESTADO_CHIP: Record<string, string> = {
 }
 
 export default function ClienteDetalle({ clienteId, onClose, onGuardado }: Props) {
+  const V = useVocab()
   const [cliente, setCliente]   = useState<ClienteData | null>(null)
   const [pedidos, setPedidos]   = useState<PedidoHist[]>([])
   const [stats, setStats]       = useState<Stats | null>(null)
@@ -120,7 +122,7 @@ export default function ClienteDetalle({ clienteId, onClose, onGuardado }: Props
       <div className="relative bg-surface w-full max-w-md h-full overflow-y-auto shadow-2xl animate-in-right">
         <div className="sticky top-0 bg-surface border-b border-line px-6 py-4 flex items-center justify-between z-10">
           <div className="font-display text-xl font-semibold tracking-tight">
-            {cargando ? 'Cargando…' : (cliente?.nombre || 'Cliente')}
+            {cargando ? 'Cargando…' : (cliente?.nombre || (V.cliente.charAt(0).toUpperCase() + V.cliente.slice(1)))}
           </div>
           <button
             onClick={onClose}
@@ -134,13 +136,13 @@ export default function ClienteDetalle({ clienteId, onClose, onGuardado }: Props
         {cargando ? (
           <div className="px-6 py-10 text-center text-mute text-sm">Cargando datos…</div>
         ) : !cliente ? (
-          <div className="px-6 py-10 text-center text-mute text-sm">No se pudo cargar el cliente.</div>
+          <div className="px-6 py-10 text-center text-mute text-sm">No se pudo cargar {V.cliente === 'clienta' ? 'la clienta' : 'el cliente'}.</div>
         ) : (
           <div className="px-6 py-6 space-y-7">
             {/* Stats */}
             {stats && (
               <div className="grid grid-cols-3 gap-2">
-                <MiniStat label="Pedidos" value={stats.total_pedidos.toString()} />
+                <MiniStat label={V.Pedidos} value={stats.total_pedidos.toString()} />
                 <MiniStat label="Gastado" value={formatCOP(stats.total_gastado)} />
                 <MiniStat label="Promedio" value={formatCOP(stats.ticket_promedio)} />
               </div>
@@ -232,9 +234,9 @@ export default function ClienteDetalle({ clienteId, onClose, onGuardado }: Props
 
             {/* Historial */}
             <section>
-              <Label>Historial de pedidos</Label>
+              <Label>{V.historial}</Label>
               {pedidos.length === 0 ? (
-                <p className="text-sm text-mute mt-2">Sin pedidos todavía.</p>
+                <p className="text-sm text-mute mt-2">{V.sinHistorial}</p>
               ) : (
                 <div className="space-y-2 mt-2">
                   {pedidos.map(p => (

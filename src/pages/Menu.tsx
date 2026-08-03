@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { cn, formatCOP } from '../lib/utils'
 import type { Plato, Categoria, PerfilUsuario } from '../lib/types'
 import PlatoEditor from '../components/PlatoEditor'
+import { useVocab } from '../lib/tema'
 import SaboresDelDia from '../components/SaboresDelDia'
 import ConfigCategorias from '../components/ConfigCategorias'
 
@@ -30,6 +31,7 @@ type FotoGaleria = {
 }
 
 export default function Menu({ session }: { session: Session }) {
+  const V = useVocab()
   const [platos, setPlatos]         = useState<Plato[]>([])
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [perfil, setPerfil]         = useState<PerfilUsuario | null>(null)
@@ -189,9 +191,9 @@ export default function Menu({ session }: { session: Session }) {
 
       <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="font-display text-4xl font-semibold tracking-tight mb-1">Menú</h1>
+          <h1 className="font-display text-4xl font-semibold tracking-tight mb-1">{V.Productos}</h1>
           <p className="text-mute text-sm">
-            {platos.length} platos en {categorias.length} categorías
+            {V.contadorProductos(platos.length, categorias.length)}
           </p>
         </div>
         {esDueno && (
@@ -199,7 +201,7 @@ export default function Menu({ session }: { session: Session }) {
             onClick={() => setEditando('nuevo')}
             className="bg-oso-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-oso-700 transition-colors"
           >
-            + Nuevo plato
+            + {V.nuevoProducto}
           </button>
         )}
       </div>
@@ -207,7 +209,7 @@ export default function Menu({ session }: { session: Session }) {
       {esDueno && (
         <div className="flex gap-2 mb-7">
           {([
-            ['platos', 'Platos'],
+            ['platos', V.tabProductos],
             ['reglas', 'Reglas por categoría'],
           ] as const).map(([v, label]) => (
             <button
@@ -233,7 +235,7 @@ export default function Menu({ session }: { session: Session }) {
             type="search"
             value={busqueda}
             onChange={e => setBusqueda(e.target.value)}
-            placeholder="Buscar plato…"
+            placeholder={V.buscarProducto}
             className="w-full pl-9 pr-3 py-2 bg-surface border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300 focus:border-oso-400"
           />
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-mute">🔍</span>
@@ -252,7 +254,7 @@ export default function Menu({ session }: { session: Session }) {
 
       {/* Lista por categoría */}
       {cargando ? (
-        <div className="text-center text-mute py-20 text-sm">Cargando menú…</div>
+        <div className="text-center text-mute py-20 text-sm">{V.cargandoProductos}</div>
       ) : platosFiltrados.length === 0 ? (
         <div className="text-center py-20 bg-surface border border-dashed border-line rounded-xl">
           <div className="text-3xl mb-3">🔍</div>

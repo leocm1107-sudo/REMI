@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { useVocab } from '../lib/tema'
 import { formatCOP } from '../lib/utils'
 
 type Opcion = {
@@ -22,6 +23,7 @@ type Plato = { id: string; nombre: string; presentaciones: Presentacion[] }
 const input = 'w-full border border-line rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-oso-300'
 
 export default function Personalizados({ session }: { session: Session }) {
+  const V = useVocab()
   const [grupos, setGrupos] = useState<Grupo[]>([])
   const [platos, setPlatos] = useState<Plato[]>([])
   const [cargando, setCargando] = useState(true)
@@ -182,7 +184,7 @@ export default function Personalizados({ session }: { session: Session }) {
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
       <div>
         <h1 className="font-display text-4xl font-semibold tracking-tight mb-1">Torta personalizada</h1>
-        <p className="text-mute text-sm">Arma el pedido con el cliente y el precio se calcula solo.</p>
+        <p className="text-mute text-sm">Arma {V.unPedido} con {V.cliente === 'clienta' ? 'la clienta' : 'el cliente'} y el precio se calcula solo.</p>
       </div>
 
       {msg && (

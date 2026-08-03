@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { cn, formatCOP } from '../lib/utils'
 import ClienteDetalle from '../components/ClienteDetalle'
+import { useVocab } from '../lib/tema'
 
 type ClienteResumen = {
   id: string
@@ -17,8 +18,8 @@ type ClienteResumen = {
 
 type Orden = 'recientes' | 'frecuentes' | 'gasto'
 
-function hace(fecha: string | null): string {
-  if (!fecha) return 'Sin pedidos'
+function hace(fecha: string | null, sinPedidos = 'Sin pedidos'): string {
+  if (!fecha) return sinPedidos
   const d = new Date(fecha)
   const ahora = new Date()
   const dias = Math.floor((ahora.getTime() - d.getTime()) / (1000 * 60 * 60 * 24))
@@ -31,6 +32,7 @@ function hace(fecha: string | null): string {
 }
 
 export default function Clientes({ session }: { session: Session }) {
+  const V = useVocab()
   const [clientes, setClientes]     = useState<ClienteResumen[]>([])
   const [cargando, setCargando]     = useState(true)
   const [noAutorizado, setNoAutorizado] = useState(false)
@@ -86,7 +88,7 @@ export default function Clientes({ session }: { session: Session }) {
   }, [clientes])
 
   if (cargando) {
-    return <div className="text-center text-mute py-20 text-sm">Cargando clientes…</div>
+    return <div className="text-center text-mute py-20 text-sm">{V.cargandoClientes}</div>
   }
 
   if (noAutorizado) {
@@ -107,9 +109,9 @@ export default function Clientes({ session }: { session: Session }) {
   return (
     <>
       <div className="mb-6">
-        <h1 className="font-display text-4xl font-semibold tracking-tight mb-1">Clientes</h1>
+        <h1 className="font-display text-4xl font-semibold tracking-tight mb-1">{V.Clientes}</h1>
         <p className="text-mute text-sm">
-          {stats.totalClientes} {stats.totalClientes === 1 ? 'cliente' : 'clientes'}
+          {stats.totalClientes} {stats.totalClientes === 1 ? V.cliente : V.clientes}
           {stats.recurrentes > 0 && <> · {stats.recurrentes} recurrentes</>}
         </p>
       </div>
@@ -121,7 +123,7 @@ export default function Clientes({ session }: { session: Session }) {
             type="search"
             value={busqueda}
             onChange={e => setBusqueda(e.target.value)}
-            placeholder="Buscar por nombre, teléfono o barrio…"
+            placeholder={V.buscarCliente}
             className="w-full pl-9 pr-3 py-2 bg-surface border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-oso-300 focus:border-oso-400"
           />
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-mute">🔍</span>
@@ -141,7 +143,7 @@ export default function Clientes({ session }: { session: Session }) {
         <div className="text-center py-20 bg-surface border border-dashed border-line rounded-xl">
           <div className="text-3xl mb-3">{busqueda ? '🔍' : '👤'}</div>
           <p className="text-ink font-medium">
-            {busqueda ? 'No se encontró ningún cliente.' : 'Todavía no hay clientes.'}
+            {busqueda ? V.sinResultados : V.aunSinClientes}
           </p>
         </div>
       ) : (
@@ -167,7 +169,7 @@ export default function Clientes({ session }: { session: Session }) {
               <div className="text-right shrink-0">
                 <div className="text-sm font-medium tnum">{formatCOP(c.total_gastado)}</div>
                 <div className="text-xs text-mute">
-                  {c.total_pedidos} {c.total_pedidos === 1 ? 'pedido' : 'pedidos'} · {hace(c.ultimo_pedido)}
+                  {c.total_pedidos} {c.total_pedidos === 1 ? V.pedido : V.pedidos} · {hace(c.ultimo_pedido, V.sinPedidos)}
                 </div>
               </div>
             </button>

@@ -14,7 +14,7 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 
 const CLAVES_CODIGO = [
-  'pedidos', 'catalogo', 'stock', 'personalizacion',
+  'pedidos', 'catalogo', 'stock', 'personalizacion', 'importar_carta',
   'agendamiento', 'agenda_servicios', 'cambios_cliente',
   'domicilio', 'maps',
   'voz', 'pagos_ia', 'aviso_jefe',

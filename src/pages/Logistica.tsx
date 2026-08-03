@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { useVocab } from '../lib/tema'
 import { cn, formatCOP } from '../lib/utils'
 import type { PerfilUsuario } from '../lib/types'
 import { useMarca } from '../lib/tema'
@@ -90,6 +91,7 @@ function preInfo(estado: string | null) {
 }
 
 export default function Logistica({ session }: { session: Session }) {
+  const V = useVocab()
   const [perfil, setPerfil]     = useState<PerfilUsuario | null>(null)
   const [cola, setCola]         = useState<ColaItem[]>([])
   const [rangos, setRangos]     = useState<RangoTiempo[]>([])
@@ -379,12 +381,12 @@ export default function Logistica({ session }: { session: Session }) {
       {tab === 'cola' && (
       <>
       {/* ───────── ZONA 2: Tiempos estimados ───────── */}
-      {!marca.features?.agendamiento && (
+      {!marca.features?.agendamiento && !marca.features?.agenda_servicios && (
         <section className="mb-8">
           <h2 className="font-display text-lg font-semibold tracking-tight mb-3">Tiempos de espera</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <RangoGrupo
-              titulo="🍳 Cocina"
+              titulo={V.lugarPreparacion}
               rangos={rangosCocina}
               activo={config?.rango_cocina_activo ?? null}
               editable={esDueno}

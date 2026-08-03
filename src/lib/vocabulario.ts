@@ -50,6 +50,27 @@ export type Vocab = {
   notasPlaceholder: string
   notasPedido: string
 
+  // Menú / catálogo
+  nuevoProducto: string
+  tabProductos: string
+  cargandoProductos: string
+  contadorProductos: (n: number, cats: number) => string
+  lugarPreparacion: string
+
+  // Clientes
+  cargandoClientes: string
+  sinPedidos: string
+  buscarCliente: string
+  sinResultados: string
+  aunSinClientes: string
+
+  // El negocio en sí
+  negocio: string
+  elNegocio: string
+  historial: string
+  sinHistorial: string
+  bienvenidaEjemplo: string
+
   // Pantalla vacía
   vacio: string
   vacioAyuda: string
@@ -84,6 +105,24 @@ const RESTAURANTE: Vocab = {
   notasPlaceholder: 'Notas (sin cebolla, término medio…)',
   notasPedido: 'Notas del pedido (entrega 7pm…)',
 
+  nuevoProducto: 'Nuevo plato',
+  tabProductos: 'Platos',
+  cargandoProductos: 'Cargando menú…',
+  contadorProductos: (n, c) => `${n} platos en ${c} categorías`,
+  lugarPreparacion: '🍳 Cocina',
+
+  cargandoClientes: 'Cargando clientes…',
+  sinPedidos: 'Sin pedidos',
+  buscarCliente: 'Buscar por nombre, teléfono o barrio…',
+  sinResultados: 'No se encontró ningún cliente.',
+  aunSinClientes: 'Todavía no hay clientes.',
+
+  negocio: 'restaurante',
+  elNegocio: 'el restaurante',
+  historial: 'Historial de pedidos',
+  sinHistorial: 'Sin pedidos todavía.',
+  bienvenidaEjemplo: '¡Hola! Bienvenido 👋 ¿Qué te provoca hoy?',
+
   vacio: 'No hay pedidos aquí.',
   vacioAyuda: 'Cuando entren por WhatsApp aparecerán solos.',
   cargando: 'Cargando pedidos…',
@@ -104,6 +143,18 @@ const REPOSTERIA: Vocab = {
 
   detalles: 'Detalles del encargo',
   notasPlaceholder: 'Notas (decoración, mensaje…)',
+
+  nuevoProducto: 'Nuevo producto',
+  tabProductos: 'Productos',
+  cargandoProductos: 'Cargando catálogo…',
+  contadorProductos: (n, c) => `${n} productos en ${c} categorías`,
+  lugarPreparacion: '🧁 Taller',
+
+  negocio: 'negocio',
+  elNegocio: 'el negocio',
+  historial: 'Historial de pedidos',
+  sinHistorial: 'Sin pedidos todavía.',
+  bienvenidaEjemplo: '¡Hola! 👋 ¿Qué se te antoja hoy?',
 
   vacio: 'No hay pedidos aquí.',
   vacioAyuda: 'Cuando entren por WhatsApp aparecerán solos.',
@@ -139,6 +190,24 @@ const SALON: Vocab = {
   confirmCancelar: '¿Seguro que quieres cancelar esta cita? El horario vuelve a quedar libre.',
   notasPlaceholder: 'Notas (cabello crespo, teñido…)',
   notasPedido: 'Notas de la cita',
+
+  nuevoProducto: 'Nuevo servicio',
+  tabProductos: 'Servicios',
+  cargandoProductos: 'Cargando servicios…',
+  contadorProductos: (n, c) => `${n} servicios en ${c} ${c === 1 ? 'categoría' : 'categorías'}`,
+  lugarPreparacion: '💇 Salón',
+
+  negocio: 'salón',
+  elNegocio: 'el salón',
+  historial: 'Historial de citas',
+  sinHistorial: 'Sin citas todavía.',
+  bienvenidaEjemplo: '¡Hola! 💇‍♀️ ¿En qué te puedo ayudar?',
+
+  cargandoClientes: 'Cargando clientas…',
+  sinPedidos: 'Sin citas',
+  buscarCliente: 'Buscar por nombre o teléfono…',
+  sinResultados: 'No se encontró ninguna clienta.',
+  aunSinClientes: 'Todavía no hay clientas.',
 
   vacio: 'No hay citas aquí.',
   vacioAyuda: 'Cuando se agenden por WhatsApp aparecerán solas.',

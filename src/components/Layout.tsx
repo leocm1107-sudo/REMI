@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { cn } from '../lib/utils'
-import { useMarca } from '../lib/tema'
+import { useMarca, useVocab } from '../lib/tema'
+import type { Vocab } from '../lib/vocabulario'
 
 type Perfil = {
   nombre: string | null
@@ -11,19 +12,37 @@ type Perfil = {
   estado_acceso: string
 }
 
-const SECCIONES = [
-  { to: '/',              label: 'Pedidos',           end: true,  soloDueno: false },
-  { to: '/personalizados', label: 'Personalizadas',   end: false, soloDueno: false, feature: 'personalizacion' },
-  { to: '/menu',          label: 'Menú',              end: false, soloDueno: false },
-  { to: '/importar',      label: 'Importar menú',     end: false, soloDueno: true },
-  { to: '/agenda',        label: 'Agenda',            end: false, soloDueno: false, feature: 'agendamiento' },
-  { to: '/citas',         label: 'Citas',             end: false, soloDueno: false, feature: 'agenda_servicios' },
-  { to: '/logistica',     label: 'Logística',         end: false, soloDueno: false },
-  { to: '/zonas',         label: 'Zonas de domicilio', end: false, soloDueno: true },
-  { to: '/clientes',      label: 'Clientes',          end: false, soloDueno: true },
-  { to: '/usuarios',      label: 'Usuarios',          end: false, soloDueno: true },
-  { to: '/configuracion', label: 'Configuración',     end: false, soloDueno: true }
-  
+// Las etiquetas salen del vocabulario del negocio: en un salón el menú
+// lateral dice Citas y Servicios, no Pedidos y Menú.
+//
+// Dos formas distintas de condicionar una sección, y la diferencia importa:
+//   feature  → se muestra SOLO si la clave está en true. Para módulos que
+//              son la excepción (agenda de citas, personalizadas).
+//   ocultaSi → se muestra SIEMPRE salvo que la clave esté explícitamente
+//              en false. Para lo que casi todos tienen (domicilio), donde
+//              exigir la clave le borraría la sección a quien nunca la
+//              declaró.
+type Seccion = {
+  to: string
+  label: string
+  end: boolean
+  soloDueno: boolean
+  feature?: string
+  ocultaSi?: string
+}
+
+const seccionesDe = (V: Vocab): Seccion[] => [
+  { to: '/',               label: V.Pedidos,             end: true,  soloDueno: false },
+  { to: '/personalizados', label: 'Personalizadas',      end: false, soloDueno: false, feature: 'personalizacion' },
+  { to: '/menu',           label: V.Productos,           end: false, soloDueno: false },
+  { to: '/importar',       label: `Importar ${V.carta}`, end: false, soloDueno: true,  ocultaSi: 'importar_carta' },
+  { to: '/agenda',         label: 'Agenda',              end: false, soloDueno: false, feature: 'agendamiento' },
+  { to: '/citas',          label: 'Citas',               end: false, soloDueno: false, feature: 'agenda_servicios' },
+  { to: '/logistica',      label: 'Logística',           end: false, soloDueno: false },
+  { to: '/zonas',          label: 'Zonas de domicilio',  end: false, soloDueno: true,  ocultaSi: 'domicilio' },
+  { to: '/clientes',       label: V.Clientes,            end: false, soloDueno: true },
+  { to: '/usuarios',       label: 'Usuarios',            end: false, soloDueno: true },
+  { to: '/configuracion',  label: 'Configuración',       end: false, soloDueno: true },
 ]
 
 export default function Layout({ session }: { session: Session }) {
@@ -34,6 +53,7 @@ export default function Layout({ session }: { session: Session }) {
   const menuRef = useRef<HTMLDivElement>(null)
   const location = useLocation()
   const marca = useMarca()
+  const V = useVocab()
   
 
   useEffect(() => {
@@ -82,10 +102,12 @@ export default function Layout({ session }: { session: Session }) {
   if (estado === 'rechazado') return <PantallaEspera onSalir={cerrarSesion} tipo="rechazado" />
 
   const esDueno = perfil?.rol === 'dueno'
-  const visibles = [
-    ...SECCIONES.filter(s =>
+  const F = marca.features ?? {}
+  const visibles: Seccion[] = [
+    ...seccionesDe(V).filter(s =>
       (!s.soloDueno || esDueno) &&
-      (!(s as any).feature || marca.features?.[(s as any).feature] === true)
+      (!s.feature  || F[s.feature] === true) &&
+      (!s.ocultaSi || F[s.ocultaSi] !== false)
     ),
     ...(esSuperadmin
       ? [{ to: '/admin', label: 'Plataforma', end: false, soloDueno: false }]

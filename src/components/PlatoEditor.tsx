@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useVocab } from '../lib/tema'
 import type { Plato, Categoria } from '../lib/types'
 
 type Props = {
@@ -47,6 +48,7 @@ const FORM_INICIAL: FormData = {
 }
 
 export default function PlatoEditor({ plato, categorias, onClose }: Props) {
+  const V = useVocab()
   const esNuevo = plato === null
   const [form, setForm]                       = useState<FormData>(FORM_INICIAL)
   const [nuevoIngrediente, setNuevoIngrediente] = useState('')
@@ -294,7 +296,7 @@ export default function PlatoEditor({ plato, categorias, onClose }: Props) {
                 value={form.tipo}
                 onChange={e => setForm({ ...form, tipo: e.target.value })}
                 className="input"
-                placeholder="plato / bebida / adición"
+                placeholder={`${V.producto} / adición`}
               />
             </Field>
           </div>
@@ -469,7 +471,7 @@ export default function PlatoEditor({ plato, categorias, onClose }: Props) {
 
           <Field label="Fotos de referencia (galería)">
             {!plato ? (
-              <p className="text-[11px] text-mute">Guarda el plato primero; luego podrás agregarle una galería de fotos de referencia.</p>
+              <p className="text-[11px] text-mute">Guarda {V.producto === "servicio" ? "el servicio" : "el " + V.producto} primero; luego podrás agregarle una galería de fotos de referencia.</p>
             ) : (
               <>
                 {galeria.length > 0 && (
