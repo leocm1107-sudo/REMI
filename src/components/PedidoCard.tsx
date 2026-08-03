@@ -1,5 +1,6 @@
 import { cn, formatCOP } from '../lib/utils'
-import { infoEstado, type Pedido } from '../lib/types'
+import { infoEstado, esRetiro, type Pedido } from '../lib/types'
+import { useVocab } from '../lib/tema'
 
 type Props = {
   pedido: Pedido
@@ -10,13 +11,15 @@ type Props = {
 const ICONO_ENTREGA: Record<string, string> = {
   domicilio: '🛵',
   recoge:    '🏪',
+  recoger:   '🏪',
   mesa:      '🍽️'
 }
 
 export default function PedidoCard({ pedido, onClick, tiempo }: Props) {
-  const info = infoEstado(pedido.estado)
+  const V = useVocab()
+  const info = infoEstado(pedido.estado, V)
   const icono = ICONO_ENTREGA[pedido.tipo_entrega] ?? '📦'
-  const esRecoge = pedido.tipo_entrega === 'recoge' || pedido.tipo_entrega === 'mesa'
+  const esRecoge = esRetiro(pedido.tipo_entrega)
 
   const direccionCorta = pedido.direccion_entrega
     ? pedido.direccion_entrega.length > 38
@@ -55,10 +58,8 @@ export default function PedidoCard({ pedido, onClick, tiempo }: Props) {
       <div className="flex items-end justify-between gap-4">
         <div className="text-sm text-mute min-w-0 truncate">
           <span className="mr-1">{icono}</span>
-          <span className="capitalize">{pedido.tipo_entrega}</span>
-          {esRecoge ? (
-            <> · recoge en local</>
-          ) : direccionCorta ? (
+          <span>{esRecoge ? V.entregaRecoge : V.entregaDomicilio}</span>
+          {esRecoge ? null : direccionCorta ? (
             <> · {direccionCorta}</>
           ) : null}
         </div>

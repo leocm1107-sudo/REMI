@@ -107,6 +107,13 @@ export function infoEstado(estado: string, opt: boolean | Vocab = false) {
   const override = opt ? LABEL_AGENDAMIENTO[estado as EstadoPedido] : undefined
   return override ? { ...base, label: override } : base
 }
+// El panel guarda 'recoger' y el bot 'recoge'. Los dos significan lo mismo,
+// y hasta ahora solo se reconocía uno: todo pedido de retiro creado desde el
+// panel pasaba a "en camino" en vez de "listo para recoger".
+export function esRetiro(tipoEntrega: string): boolean {
+  return tipoEntrega === 'recoge' || tipoEntrega === 'recoger' || tipoEntrega === 'mesa'
+}
+
 // El siguiente estado DEPENDE del tipo de entrega.
 // Domicilio:   ... preparando -> en_camino     -> entregado
 // Recoge/mesa: ... preparando -> listo_recoger -> entregado
@@ -114,7 +121,7 @@ export function siguienteEstado(
   estadoActual: EstadoPedido,
   tipoEntrega: string
 ): EstadoPedido | undefined {
-  const esRecoge = tipoEntrega === 'recoge' || tipoEntrega === 'mesa'
+  const esRecoge = esRetiro(tipoEntrega)
 
   switch (estadoActual) {
     case 'cotizado':      return 'confirmado'

@@ -5,6 +5,7 @@
 // refresca sola por Realtime cuando la RPC inserta.
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useMarca, useVocab } from '../lib/tema'
 import { formatCOP } from '../lib/utils'
 
 type Presentacion = { id: string; nombre: string; detalle: string | null; precio: number; orden: number }
@@ -19,6 +20,8 @@ const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm bg-whit
 const btnSec   = 'px-2.5 py-1 bg-oso-100 text-oso-800 rounded-lg text-sm hover:bg-oso-200 transition-colors'
 
 export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () => void; onCreado: () => void }) {
+  const V = useVocab()
+  const marca = useMarca()
   const [platos, setPlatos] = useState<PlatoMin[]>([])
   const [busca, setBusca] = useState('')
   const [items, setItems] = useState<Item[]>([])
@@ -28,7 +31,7 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
 
   const [telefono, setTelefono] = useState('')
   const [nombre, setNombre] = useState('')
-  const [tipo, setTipo] = useState<'recoger' | 'domicilio'>('recoger')
+  const [tipo, setTipo] = useState<'recoge' | 'domicilio'>('recoge')
   const [direccion, setDireccion] = useState('')
   const [domicilioValor, setDomicilioValor] = useState('')
   const [metodoPago, setMetodoPago] = useState('efectivo')
@@ -221,7 +224,7 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
       <div className="relative w-full max-w-md bg-canvas h-full overflow-y-auto shadow-xl animate-in-right">
         <div className="sticky top-0 bg-canvas border-b border-line px-5 py-4 flex items-center justify-between z-10">
           <div>
-            <h2 className="font-display text-xl font-semibold">Nuevo pedido</h2>
+            <h2 className="font-display text-xl font-semibold">{V.nuevoPedido}</h2>
             <p className="text-xs text-mute">Por llamada o mostrador</p>
           </div>
           <button onClick={onClose} className="text-mute hover:text-ink text-xl leading-none">✕</button>
@@ -238,15 +241,17 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
               <label className="text-xs text-mute">Celular (WhatsApp) *</label>
               <input className={inputCls} value={telefono} onChange={e => setTelefono(e.target.value)}
                 onBlur={buscarCliente} placeholder="321 759 6315" />
-              <p className="text-[11px] text-mute mt-1">Usa el celular real: conecta el pedido con WhatsApp.</p>
+              <p className="text-[11px] text-mute mt-1">Usa el celular real: conecta {V.unPedido} con WhatsApp.</p>
             </div>
             <div>
               <label className="text-xs text-mute">Nombre</label>
               <input className={inputCls} value={nombre} onChange={e => setNombre(e.target.value)} />
             </div>
             <div className="flex gap-4 text-sm">
-              <label className="flex items-center gap-2"><input type="radio" checked={tipo === 'recoger'} onChange={() => setTipo('recoger')} /> Recoge</label>
-              <label className="flex items-center gap-2"><input type="radio" checked={tipo === 'domicilio'} onChange={() => setTipo('domicilio')} /> Domicilio</label>
+              <label className="flex items-center gap-2"><input type="radio" checked={tipo === 'recoge'} onChange={() => setTipo('recoge')} /> {V.entregaRecoge}</label>
+              {marca.features?.domicilio !== false && (
+                <label className="flex items-center gap-2"><input type="radio" checked={tipo === 'domicilio'} onChange={() => setTipo('domicilio')} /> {V.entregaDomicilio}</label>
+              )}
             </div>
             {tipo === 'domicilio' && (
               <div className="grid grid-cols-3 gap-2">
@@ -275,7 +280,7 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
           <div className="border-t border-line pt-4 space-y-3">
             <div className="relative">
               <input className={inputCls} value={busca} onChange={e => { setBusca(e.target.value); setPlatoTamanos(null) }}
-                placeholder="Buscar plato… (mín. 2 letras)" />
+                placeholder={`${V.buscarProducto} (mín. 2 letras)`} />
               {resultados.length > 0 && !platoTamanos && (
                 <div className="absolute z-20 mt-1 w-full bg-white border border-line rounded-lg shadow-lg overflow-hidden">
                   {resultados.map(p => {
@@ -345,12 +350,12 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
                   </p>
                 )}
                 <input className={inputCls} value={it.notas} onChange={e => setItem(i, { notas: e.target.value })}
-                  placeholder="Notas (sin cebolla, término medio…)" />
+                  placeholder={V.notasPlaceholder} />
               </div>
             )})}
 
             <details className="text-sm">
-              <summary className="cursor-pointer text-mute">Producto fuera de carta</summary>
+              <summary className="cursor-pointer text-mute">{V.fueraDeCarta}</summary>
               <div className="flex gap-2 mt-2">
                 <input className={inputCls} value={libreNombre} onChange={e => setLibreNombre(e.target.value)} placeholder="Nombre" />
                 <input className={`${inputCls} w-28`} value={librePrecio} onChange={e => setLibrePrecio(e.target.value)} placeholder="Precio" />
@@ -361,7 +366,7 @@ export default function NuevoPedidoModal({ onClose, onCreado }: { onClose: () =>
 
           {/* Notas + total */}
           <div className="border-t border-line pt-4 space-y-2">
-            <input className={inputCls} value={notas} onChange={e => setNotas(e.target.value)} placeholder="Notas del pedido (entrega 7pm…)" />
+            <input className={inputCls} value={notas} onChange={e => setNotas(e.target.value)} placeholder={V.notasPedido} />
             <div className="flex justify-between text-sm pt-1">
               <span className="text-mute">Subtotal</span><span className="tnum">{formatCOP(subtotal)}</span>
             </div>

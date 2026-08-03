@@ -38,6 +38,18 @@ export type Vocab = {
   // Estados: solo los que cambian de nombre según el rubro
   estados: Record<string, string>
 
+  // Entrega
+  entregaRecoge: string
+  entregaDomicilio: string
+
+  // Detalle
+  Items: string
+  detalles: string
+  cancelar: string
+  confirmCancelar: string
+  notasPlaceholder: string
+  notasPedido: string
+
   // Pantalla vacía
   vacio: string
   vacioAyuda: string
@@ -62,6 +74,16 @@ const RESTAURANTE: Vocab = {
     entregado: 'Entregado',
   },
 
+  entregaRecoge: 'Recoge en el local',
+  entregaDomicilio: 'Domicilio',
+
+  Items: 'Items',
+  detalles: 'Detalles del pedido',
+  cancelar: 'Cancelar pedido',
+  confirmCancelar: '¿Seguro que quieres cancelar este pedido?',
+  notasPlaceholder: 'Notas (sin cebolla, término medio…)',
+  notasPedido: 'Notas del pedido (entrega 7pm…)',
+
   vacio: 'No hay pedidos aquí.',
   vacioAyuda: 'Cuando entren por WhatsApp aparecerán solos.',
   cargando: 'Cargando pedidos…',
@@ -79,6 +101,9 @@ const REPOSTERIA: Vocab = {
     listo_recoger: 'Listo para recoger',
     entregado: 'Entregado',
   },
+
+  detalles: 'Detalles del encargo',
+  notasPlaceholder: 'Notas (decoración, mensaje…)',
 
   vacio: 'No hay pedidos aquí.',
   vacioAyuda: 'Cuando entren por WhatsApp aparecerán solos.',
@@ -104,6 +129,16 @@ const SALON: Vocab = {
     listo_recoger: 'Lista para atender',
     entregado: 'Atendida',
   },
+
+  entregaRecoge: 'En el salón',
+  entregaDomicilio: 'Domicilio',
+
+  Items: 'Servicios',
+  detalles: 'Detalles de la cita',
+  cancelar: 'Cancelar cita',
+  confirmCancelar: '¿Seguro que quieres cancelar esta cita? El horario vuelve a quedar libre.',
+  notasPlaceholder: 'Notas (cabello crespo, teñido…)',
+  notasPedido: 'Notas de la cita',
 
   vacio: 'No hay citas aquí.',
   vacioAyuda: 'Cuando se agenden por WhatsApp aparecerán solas.',

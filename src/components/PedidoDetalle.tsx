@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { cn, formatCOP } from '../lib/utils'
-import { infoEstado, siguienteEstado, type EstadoPedido, type Pedido } from '../lib/types'
+import { infoEstado, siguienteEstado, esRetiro, type EstadoPedido, type Pedido } from '../lib/types'
 import { supabase } from '../lib/supabase'
-import { useMarca } from '../lib/tema'
+import { useMarca, useVocab } from '../lib/tema'
 
 type Props = {
   pedido: Pedido
@@ -11,10 +11,11 @@ type Props = {
 }
 
 export default function PedidoDetalle({ pedido, onClose, onCambiarEstado }: Props) {
-  const esRecoge = pedido.tipo_entrega === 'recoge' || pedido.tipo_entrega === 'mesa'
+  const esRecoge = esRetiro(pedido.tipo_entrega)
   const [tiempoInput, setTiempoInput] = useState('')
   const marca = useMarca()
-  const info = infoEstado(pedido.estado, marca.features?.agendamiento)
+  const V = useVocab()
+  const info = infoEstado(pedido.estado, V)
   const siguiente = siguienteEstado(pedido.estado, pedido.tipo_entrega)
   const [fotos, setFotos] = useState<{ url: string; notas: string | null }[]>([])
   useEffect(() => {
@@ -71,7 +72,7 @@ async function avanzarConTiempo(p: Pedido, nuevoEstado: EstadoPedido) {
 
         <div className="px-6 py-6 space-y-7">
           <section>
-            <Label>Cliente</Label>
+            <Label>{V.cliente}</Label>
             <div className="font-medium">{pedido.clientes?.nombre || 'Sin nombre'}</div>
             {pedido.clientes?.telefono && (
               <a
@@ -87,7 +88,7 @@ async function avanzarConTiempo(p: Pedido, nuevoEstado: EstadoPedido) {
           </section>
 
           <section>
-            <Label>Items</Label>
+            <Label>{V.Items}</Label>
             {pedido.pedido_items && pedido.pedido_items.length > 0 ? (
               <div className="space-y-3">
                 {pedido.pedido_items.map(item => (
@@ -111,12 +112,12 @@ async function avanzarConTiempo(p: Pedido, nuevoEstado: EstadoPedido) {
                 ))}
               </div>
             ) : (
-              <div className="text-sm text-mute">Cargando items…</div>
+              <div className="text-sm text-mute">{V.cargando}</div>
             )}
           </section>
           {(pedido as any).notas_internas && (
             <section>
-              <Label>Detalles del encargo</Label>
+              <Label>{V.detalles}</Label>
               <p className="text-sm whitespace-pre-wrap">{(pedido as any).notas_internas}</p>
             </section>
           )}
@@ -158,7 +159,7 @@ async function avanzarConTiempo(p: Pedido, nuevoEstado: EstadoPedido) {
             </div>
           </section>
 
-          {pedido.domicilio_requiere_revision && (
+          {pedido.domicilio_requiere_revision && marca.features?.domicilio !== false && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-sm text-amber-900">
               <div className="font-medium mb-0.5">⚠️ Dirección fuera de rango</div>
               <div className="text-xs">
@@ -170,10 +171,8 @@ async function avanzarConTiempo(p: Pedido, nuevoEstado: EstadoPedido) {
           <section className="grid grid-cols-2 gap-4">
             <div>
               <Label>Entrega</Label>
-              <div className="font-medium capitalize">{pedido.tipo_entrega}</div>
-              {esRecoge ? (
-                <div className="text-mute mt-0.5 text-xs">Recoge en el local</div>
-              ) : pedido.direccion_entrega ? (
+              <div className="font-medium">{esRecoge ? V.entregaRecoge : V.entregaDomicilio}</div>
+              {esRecoge ? null : pedido.direccion_entrega ? (
                 <div className="text-mute mt-0.5 text-xs">{pedido.direccion_entrega}</div>
               ) : null}
             </div>
@@ -210,18 +209,18 @@ async function avanzarConTiempo(p: Pedido, nuevoEstado: EstadoPedido) {
                   onClick={() => avanzarConTiempo(pedido, siguiente)}
                   className="w-full bg-oso-600 text-white py-3 rounded-lg font-medium hover:bg-oso-700 transition-colors"
                 >
-                  Marcar como {infoEstado(siguiente, marca.features?.agendamiento).label}
+                  Marcar como {infoEstado(siguiente, V).label}
                 </button>
               )}
               <button
                 onClick={() => {
-                  if (confirm('¿Seguro que quieres cancelar este pedido?')) {
+                  if (confirm(V.confirmCancelar)) {
                     onCambiarEstado(pedido, 'cancelado')
                   }
                 }}
                 className="w-full bg-surface text-red-700 py-2.5 rounded-lg text-sm hover:bg-red-50 transition-colors border border-line"
               >
-                Cancelar pedido
+                {V.cancelar}
               </button>
             </section>
           )}
