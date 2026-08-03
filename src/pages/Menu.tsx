@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { cn, formatCOP } from '../lib/utils'
 import type { Plato, Categoria, PerfilUsuario } from '../lib/types'
 import PlatoEditor from '../components/PlatoEditor'
-import { useVocab } from '../lib/tema'
+import { useMarca, useVocab } from '../lib/tema'
 import SaboresDelDia from '../components/SaboresDelDia'
 import ConfigCategorias from '../components/ConfigCategorias'
 
@@ -32,6 +32,8 @@ type FotoGaleria = {
 
 export default function Menu({ session }: { session: Session }) {
   const V = useVocab()
+  const marca = useMarca()
+  const usaSaboresDia = marca.features?.sabores_dia !== false
   const [platos, setPlatos]         = useState<Plato[]>([])
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [perfil, setPerfil]         = useState<PerfilUsuario | null>(null)
@@ -187,7 +189,7 @@ export default function Menu({ session }: { session: Session }) {
 
   return (
     <>
-      <SaboresDelDia />
+      {usaSaboresDia && <SaboresDelDia />}
 
       <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
         <div>
@@ -274,6 +276,7 @@ export default function Menu({ session }: { session: Session }) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {platosDeCat.map(plato => (
                     <PlatoCard
+                      usaSaboresDia={usaSaboresDia}
                       key={plato.id}
                       plato={plato}
                       fotos={fotosPorPlato.get(plato.id) ?? []}
@@ -310,7 +313,7 @@ export default function Menu({ session }: { session: Session }) {
 }
 
 function PlatoCard({
-  plato, fotos, esDueno, onToggle, onEdit, onSabores
+  plato, fotos, esDueno, onToggle, onEdit, onSabores, usaSaboresDia = true
 }: {
   plato: Plato
   fotos: FotoGaleria[]
@@ -318,6 +321,7 @@ function PlatoCard({
   onToggle: () => void
   onEdit: () => void
   onSabores: (patch: { usa_sabores_dia?: boolean; sabores?: Sabor[] }) => void
+  usaSaboresDia?: boolean
 }) {
   const [abierto, setAbierto] = useState(false)
   const [nuevoSabor, setNuevoSabor] = useState('')
@@ -404,7 +408,7 @@ function PlatoCard({
           </div>
         )}
 
-        {esDueno && (
+        {esDueno && usaSaboresDia && (
           <div className="border-t border-line pt-2.5 mb-2.5">
             <div className="flex items-center gap-2">
               <button

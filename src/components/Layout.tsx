@@ -33,11 +33,11 @@ type Seccion = {
 
 const seccionesDe = (V: Vocab): Seccion[] => [
   { to: '/',               label: V.Pedidos,             end: true,  soloDueno: false },
-  { to: '/personalizados', label: 'Personalizadas',      end: false, soloDueno: false, feature: 'personalizacion' },
+  { to: '/personalizados', label: 'Personalizadas',      end: false, soloDueno: false, feature: 'personalizacion', ocultaSi: 'panel_personalizados' },
   { to: '/menu',           label: V.Productos,           end: false, soloDueno: false },
   { to: '/importar',       label: `Importar ${V.carta}`, end: false, soloDueno: true,  ocultaSi: 'importar_carta' },
   { to: '/agenda',         label: 'Agenda',              end: false, soloDueno: false, feature: 'agendamiento' },
-  { to: '/citas',          label: 'Citas',               end: false, soloDueno: false, feature: 'agenda_servicios' },
+  { to: '/citas',          label: 'Agenda',              end: false, soloDueno: false, feature: 'agenda_servicios' },
   { to: '/logistica',      label: 'Logística',           end: false, soloDueno: false },
   { to: '/zonas',          label: 'Zonas de domicilio',  end: false, soloDueno: true,  ocultaSi: 'domicilio' },
   { to: '/clientes',       label: V.Clientes,            end: false, soloDueno: true },

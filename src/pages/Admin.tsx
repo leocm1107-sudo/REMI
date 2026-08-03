@@ -15,6 +15,7 @@ import { supabase } from '../lib/supabase'
 
 const CLAVES_CODIGO = [
   'pedidos', 'catalogo', 'stock', 'personalizacion', 'importar_carta',
+  'sabores_dia', 'panel_personalizados',
   'agendamiento', 'agenda_servicios', 'cambios_cliente',
   'domicilio', 'maps',
   'voz', 'pagos_ia', 'aviso_jefe',
