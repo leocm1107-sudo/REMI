@@ -2,6 +2,21 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { cn } from '../lib/utils'
+import { useMarca, useVocab } from '../lib/tema'
+
+// Una persona del equipo que atiende (estilista, técnico…). Es distinto del
+// usuario del panel: puede haber alguien con acceso que no atienda clientas
+// —caja, administración— y al revés, alguien del equipo que todavía no tiene
+// cuenta. Enlazarlos es lo que permite que cada una marque SUS horarios.
+type MiembroEquipo = {
+  id: string
+  nombre: string
+  color: string | null
+  activo: boolean
+  usuario_id: string | null
+  usuario_nombre: string | null
+  usuario_email: string | null
+}
 
 type UsuarioPanel = {
   user_id: string
@@ -13,7 +28,11 @@ type UsuarioPanel = {
 }
 
 export default function Usuarios({ session }: { session: Session }) {
+  const marca = useMarca()
+  const V = useVocab()
+  const usaEquipo = marca.features?.agenda_servicios === true
   const [usuarios, setUsuarios] = useState<UsuarioPanel[]>([])
+  const [equipo, setEquipo] = useState<MiembroEquipo[]>([])
   const [cargando, setCargando] = useState(true)
   const [noAutorizado, setNoAutorizado] = useState(false)
   const [procesando, setProcesando] = useState<string | null>(null)
@@ -26,13 +45,50 @@ export default function Usuarios({ session }: { session: Session }) {
       return
     }
     setUsuarios((data ?? []) as UsuarioPanel[])
+
+    if (usaEquipo) {
+      const { data: eq } = await supabase.rpc('equipo_con_cuentas')
+      setEquipo((eq ?? []) as MiembroEquipo[])
+    }
     setCargando(false)
+  }
+
+  // Enlaza (o desenlaza) una cuenta con una persona del equipo. La RPC valida
+  // que quien lo hace sea el dueño, que la cuenta sea de este negocio y esté
+  // aprobada, y que no esté ya asignada a otra persona.
+  async function asignarEquipo(userId: string, empleadoId: string | null) {
+    setProcesando(userId)
+
+    // Si la cuenta ya estaba asignada a otra persona, primero se suelta:
+    // una cuenta = una persona del equipo.
+    const anterior = equipo.find(e => e.usuario_id === userId)
+    if (anterior && anterior.id !== empleadoId) {
+      await supabase.rpc('asignar_usuario_empleado', {
+        p_empleado_id: anterior.id, p_user_id: null,
+      })
+    }
+
+    if (empleadoId) {
+      const { data, error } = await supabase.rpc('asignar_usuario_empleado', {
+        p_empleado_id: empleadoId, p_user_id: userId,
+      })
+      if (error) { alert('Error: ' + error.message); setProcesando(null); return }
+      const r = data as any
+      if (r?.ok !== true) {
+        alert(r?.mensaje ?? 'No se pudo asignar.')
+        setProcesando(null)
+        return
+      }
+    }
+
+    setProcesando(null)
+    cargar()
   }
 
   useEffect(() => {
     cargar()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [usaEquipo])
 
   const pendientes = useMemo(
     () => usuarios.filter(u => u.estado_acceso === 'pendiente'),
@@ -160,7 +216,8 @@ export default function Usuarios({ session }: { session: Session }) {
             const esDueno = u.rol === 'dueno'
             const enProceso = procesando === u.user_id
             return (
-              <div key={u.user_id} className="bg-surface border border-line rounded-xl p-4 flex items-center gap-4">
+              <div key={u.user_id} className="bg-surface border border-line rounded-xl p-4">
+              <div className="flex items-center gap-4">
                 <div className={cn(
                   "shrink-0 w-11 h-11 rounded-full grid place-items-center font-display font-semibold",
                   esDueno ? "bg-oso-600 text-white" : "bg-oso-100 text-oso-800"
@@ -215,9 +272,56 @@ export default function Usuarios({ session }: { session: Session }) {
                   )}
                 </div>
               </div>
+
+              {/* ── A quién atiende ──────────────────────────────────
+                  Solo en negocios con agenda por persona. El rol decide
+                  QUÉ secciones ve; esto decide DE QUIÉN son los horarios
+                  que puede tocar. Sin la asignación, una estilista entra
+                  al panel pero no puede marcar cuándo trabaja. */}
+              {usaEquipo && (
+                <div className="mt-3 pt-3 border-t border-line flex items-center gap-2 flex-wrap">
+                  <label className="text-xs text-mute" htmlFor={`eq-${u.user_id}`}>
+                    Atiende como
+                  </label>
+                  <select
+                    id={`eq-${u.user_id}`}
+                    disabled={enProceso}
+                    value={equipo.find(e => e.usuario_id === u.user_id)?.id ?? ''}
+                    onChange={ev => asignarEquipo(u.user_id, ev.target.value || null)}
+                    className="text-xs bg-canvas border border-line rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-oso-300"
+                  >
+                    <option value="">— nadie del equipo —</option>
+                    {equipo
+                      .filter(e => e.activo && (!e.usuario_id || e.usuario_id === u.user_id))
+                      .map(e => (
+                        <option key={e.id} value={e.id}>{e.nombre}</option>
+                      ))}
+                  </select>
+
+                  {equipo.find(e => e.usuario_id === u.user_id) ? (
+                    <span className="text-[11px] text-mute">
+                      Puede marcar sus propios horarios en Agenda.
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-mute">
+                      Sin asignar: ve la agenda pero no puede editar horarios.
+                    </span>
+                  )}
+                </div>
+              )}
+              </div>
             )
           })}
         </div>
+
+        {/* Quién del equipo sigue sin cuenta */}
+        {usaEquipo && equipo.some(e => e.activo && !e.usuario_id) && (
+          <p className="text-xs text-mute mt-3">
+            Sin cuenta todavía:{' '}
+            <strong>{equipo.filter(e => e.activo && !e.usuario_id).map(e => e.nombre).join(', ')}</strong>.
+            Que se registren en el panel y aprobalas acá para poder asignarlas.
+          </p>
+        )}
       </section>
 
       {/* RECHAZADOS (colapsado abajo, con opción de readmitir) */}
@@ -254,7 +358,8 @@ export default function Usuarios({ session }: { session: Session }) {
 
       <p className="text-xs text-mute mt-6 leading-relaxed">
         Las personas nuevas se registran y quedan pendientes hasta que apruebes su acceso.
-        Los empleados pueden ascenderse a dueño para editar menú, tiempos y configuración.
+        Podés ascender a un empleado a dueño para que edite {V.Productos.toLowerCase()},
+        tiempos y configuración.
       </p>
     </>
   )

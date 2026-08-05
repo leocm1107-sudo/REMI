@@ -119,8 +119,8 @@ export default function SaboresDelDia() {
     guardar(p.id, { sabores: p.sabores.filter((_, j) => j !== i) })
   }
 
-  function apagarTodos(p: Plato) {
-    guardar(p.id, { sabores: p.sabores.map(s => ({ ...s, disponible: false })) })
+  function marcarTodos(p: Plato, disponible: boolean) {
+    guardar(p.id, { sabores: p.sabores.map(s => ({ ...s, disponible })) })
   }
 
   return (
@@ -129,6 +129,7 @@ export default function SaboresDelDia() {
         <h3 className="font-display text-lg font-semibold">Sabores del día</h3>
         <p className="text-sm text-mute mt-0.5">
           Marcá cuáles hay hoy: el bot solo ofrece los que dejes encendidos.
+          Un clic en el sabor lo prende o lo apaga; la ✕ lo borra de la carta.
         </p>
       </div>
 
@@ -196,15 +197,56 @@ export default function SaboresDelDia() {
                       <div className="flex flex-wrap gap-1">
                         {p.sabores.map((s, i) => (
                           <span key={`${s.nombre}-${i}`}
-                            className={`inline-flex items-center gap-1 text-[11px] pl-2 pr-1 py-0.5 rounded-full border ${
-                              s.disponible ? 'bg-oso-50 border-oso-200 text-oso-800' : 'bg-canvas border-line text-mute line-through'
+                            className={`group inline-flex items-center rounded-full border transition-colors ${
+                              s.disponible
+                                ? 'bg-oso-600 border-oso-600 text-white'
+                                : 'bg-canvas border-line text-mute'
                             }`}>
-                            <span onClick={() => alternarSabor(p, i)} className="cursor-pointer">{s.nombre}</span>
-                            <button onClick={() => quitarSabor(p, i)}
-                              className="hover:text-red-600 leading-none px-0.5" aria-label={`Quitar ${s.nombre}`}>✕</button>
+                            {/* El chip ES el interruptor: prendido = sólido con ✓,
+                                apagado = tenue y tachado. Antes era un <span> con
+                                onClick y nadie adivinaba que se podía apagar, así
+                                que se terminaba borrando el sabor para reescribirlo
+                                al día siguiente. */}
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={s.disponible}
+                              onClick={() => alternarSabor(p, i)}
+                              title={s.disponible ? 'Hay hoy — clic para apagar' : 'No hay hoy — clic para prender'}
+                              className="inline-flex items-center gap-1 text-[11px] pl-2 pr-1.5 py-1 rounded-full"
+                            >
+                              <span className={`text-[9px] leading-none ${s.disponible ? '' : 'opacity-40'}`}>
+                                {s.disponible ? '✓' : '○'}
+                              </span>
+                              <span className={s.disponible ? '' : 'line-through'}>{s.nombre}</span>
+                            </button>
+                            {/* Borrar es otra cosa: saca el sabor de la carta para
+                                siempre. Va discreto y solo al pasar el mouse. */}
+                            <button
+                              type="button"
+                              onClick={() => quitarSabor(p, i)}
+                              className={`leading-none pr-1.5 pl-0.5 text-[10px] opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity ${
+                                s.disponible ? 'hover:text-red-200' : 'hover:text-red-600'
+                              }`}
+                              aria-label={`Borrar ${s.nombre} de la carta`}
+                              title="Borrar de la carta"
+                            >✕</button>
                           </span>
                         ))}
                       </div>
+
+                      {p.sabores.length > 1 && (
+                        <div className="flex gap-2 pt-0.5">
+                          <button onClick={() => marcarTodos(p, true)}
+                            className="text-[10px] text-oso-700 hover:text-oso-900 underline decoration-dotted">
+                            Hay todos
+                          </button>
+                          <button onClick={() => marcarTodos(p, false)}
+                            className="text-[10px] text-mute hover:text-ink underline decoration-dotted">
+                            No hay ninguno
+                          </button>
+                        </div>
+                      )}
                     )}
 
                     <div className="flex gap-1">
@@ -218,12 +260,6 @@ export default function SaboresDelDia() {
                       </button>
                     </div>
 
-                    {p.sabores.length > 0 && hoy.length > 0 && (
-                      <button onClick={() => apagarTodos(p)}
-                        className="text-[10px] text-mute hover:text-ink underline decoration-dotted">
-                        Hoy no hay ninguno
-                      </button>
-                    )}
                   </div>
                 )}
               </div>
