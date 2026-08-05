@@ -41,6 +41,18 @@ type Excepcion = {
   nota: string | null
 }
 
+type Servicio = { id: string; nombre: string; duracion_minutos: number; precio_desde: number | null }
+
+type NuevaCita = {
+  empleadoId: string
+  empleadoNombre: string
+  hora: string          // HH:MM del bloque donde se hizo clic
+  servicioId: string
+  nombre: string
+  telefono: string
+  notas: string
+}
+
 type CitaServicio = {
   id: string
   fecha: string
@@ -53,6 +65,9 @@ type CitaServicio = {
   plato_id: string | null
   pedido_id: string | null
   platos: { nombre: string } | null
+  cliente_nombre: string | null
+  cliente_telefono: string | null
+  origen: string | null
   pedidos: {
     numero_pedido: string
     total: number
@@ -110,8 +125,16 @@ export default function Citas({ session }: { session: Session }) {
   const [excepciones, setExcepciones] = useState<Excepcion[]>([])
   const [citas, setCitas] = useState<CitaServicio[]>([])
   const [horarioSalon, setHorarioSalon] = useState<{ abre: number; cierra: number }>({ abre: 8 * 60, cierra: 18 * 60 })
+  // El salón cierra domingos y festivos; eso no depende de cada persona.
+  // Sin mostrarlo, la dueña marcaba "no vengo" en días donde igual no se abre.
+  const [festivos, setFestivos] = useState<Record<string, string>>({})
+  const [diasCerrados, setDiasCerrados] = useState<Set<number>>(new Set())
+  const [abreFestivos, setAbreFestivos] = useState(false)
   const [cargando, setCargando] = useState(true)
   const [citaSel, setCitaSel] = useState<CitaServicio | null>(null)
+  const [servicios, setServicios] = useState<Servicio[]>([])
+  const [nueva, setNueva] = useState<NuevaCita | null>(null)
+  const [creando, setCreando] = useState(false)
   const [guardando, setGuardando] = useState(false)
 
   // ── Identidad y restaurante ──────────────────────────────
@@ -123,6 +146,8 @@ export default function Citas({ session }: { session: Session }) {
       if (r.data?.restaurante_id) setRestauranteId(r.data.restaurante_id as string)
       const e = await supabase.from('empleados').select('id').eq('usuario_id', session.user.id).maybeSingle()
       if (e.data?.id) setMiEmpleadoId(e.data.id as string)
+      const sv = await supabase.rpc('servicios_agendables')
+      setServicios((sv.data ?? []) as Servicio[])
     })()
   }, [session.user.id])
 
@@ -131,15 +156,19 @@ export default function Citas({ session }: { session: Session }) {
     setCargando(true)
     const dow = new Date(`${fecha}T12:00:00`).getDay()
 
-    const [emp, pla, exc, cit, hor] = await Promise.all([
+    const [emp, pla, exc, cit, hor, fes, sem, cfg] = await Promise.all([
       supabase.from('empleados').select('*').eq('activo', true).order('orden').order('nombre'),
       supabase.from('empleado_horarios').select('*'),
       supabase.from('empleado_disponibilidad').select('*')
         .gte('fecha', sumarDias(fecha, -7)).lte('fecha', sumarDias(fecha, 21)),
       supabase.from('citas')
-        .select('id, fecha, hora, hora_fin, duracion_minutos, estado, notas, empleado_id, plato_id, pedido_id, platos(nombre), pedidos(numero_pedido, total, estado, clientes(nombre, telefono))')
+        .select('id, fecha, hora, hora_fin, duracion_minutos, estado, notas, empleado_id, plato_id, pedido_id, cliente_nombre, cliente_telefono, origen, platos(nombre), pedidos(numero_pedido, total, estado, clientes(nombre, telefono))')
         .eq('fecha', fecha),
       supabase.from('horarios_restaurante').select('dia_semana, hora_apertura, hora_cierre, cerrado').eq('dia_semana', dow).maybeSingle(),
+      supabase.from('festivos_colombia').select('fecha, nombre')
+        .gte('fecha', hoyISO()).lte('fecha', sumarDias(hoyISO(), 21)),
+      supabase.from('horarios_restaurante').select('dia_semana, cerrado'),
+      supabase.from('restaurantes').select('abre_festivos').maybeSingle(),
     ])
 
     setEmpleados((emp.data ?? []) as Empleado[])
@@ -147,6 +176,10 @@ export default function Citas({ session }: { session: Session }) {
     setExcepciones((exc.data ?? []) as Excepcion[])
     setCitas(((cit.data ?? []) as unknown as CitaServicio[])
       .filter(c => c.estado !== 'cancelada'))
+
+    setFestivos(Object.fromEntries(((fes.data ?? []) as any[]).map(f => [f.fecha, f.nombre])))
+    setDiasCerrados(new Set(((sem.data ?? []) as any[]).filter(d => d.cerrado).map(d => d.dia_semana)))
+    setAbreFestivos((cfg.data as any)?.abre_festivos === true)
 
     const h = hor.data as any
     if (h && !h.cerrado) {
@@ -188,6 +221,31 @@ export default function Citas({ session }: { session: Session }) {
 
   const altoTotal = ((horarioSalon.cierra - horarioSalon.abre) / 60) * ALTO_HORA
 
+  // Agendar a mano: la clienta que llamó, la que llegó al salón, la de
+  // Instagram. La RPC respeta el choque de horarios pero NO la anticipación
+  // de 24 h ni el margen de walk-ins: esos son frenos para el bot, no para
+  // quien conoce su salón.
+  async function guardarNueva() {
+    if (!nueva) return
+    if (!nueva.servicioId) { alert('Elegí el servicio.'); return }
+    setCreando(true)
+    const { data, error } = await supabase.rpc('crear_cita_manual', {
+      p_empleado_id: nueva.empleadoId,
+      p_plato_id: nueva.servicioId,
+      p_fecha: fecha,
+      p_hora: nueva.hora,
+      p_cliente_nombre: nueva.nombre || null,
+      p_cliente_telefono: nueva.telefono || null,
+      p_notas: nueva.notas || null,
+    })
+    setCreando(false)
+    if (error) { alert('Error: ' + error.message); return }
+    const r = data as any
+    if (r?.ok !== true) { alert(r?.mensaje ?? 'No se pudo agendar.'); return }
+    setNueva(null)
+    cargar()
+  }
+
   async function cancelarCita(id: string) {
     if (!confirm('¿Cancelar esta cita? El horario vuelve a quedar libre.')) return
     await supabase.from('citas').update({ estado: 'cancelada' }).eq('id', id)
@@ -196,16 +254,48 @@ export default function Citas({ session }: { session: Session }) {
   }
 
   // ── Plantilla semanal ────────────────────────────────────
-  async function guardarPlantilla(empId: string, dia: number, activo: boolean, desde: string, hasta: string) {
+  // Un día puede tener VARIAS franjas: mañana y tarde, o el que entra a
+  // mediodía. La tabla siempre lo soportó (una fila por franja); era la
+  // pantalla la que asumía una sola.
+  function franjasDe(empId: string, dia: number) {
+    return plantilla
+      .filter(p => p.empleado_id === empId && p.dia_semana === dia && p.activo)
+      .sort((a, b) => a.hora_desde.localeCompare(b.hora_desde))
+  }
+
+  async function agregarFranja(empId: string, dia: number) {
     setGuardando(true)
-    const ex = plantilla.find(p => p.empleado_id === empId && p.dia_semana === dia)
-    if (ex) {
-      await supabase.from('empleado_horarios')
-        .update({ activo, hora_desde: desde, hora_hasta: hasta }).eq('id', ex.id)
-    } else if (activo) {
-      await supabase.from('empleado_horarios')
-        .insert({ empleado_id: empId, dia_semana: dia, hora_desde: desde, hora_hasta: hasta, activo: true })
-    }
+    const previas = franjasDe(empId, dia)
+    // La segunda franja arranca donde suele arrancar la tarde
+    const desde = previas.length === 0 ? '08:00' : '14:00'
+    const hasta = previas.length === 0 ? '12:00' : '18:00'
+    await supabase.from('empleado_horarios')
+      .insert({ empleado_id: empId, dia_semana: dia, hora_desde: desde, hora_hasta: hasta, activo: true })
+    setGuardando(false)
+    cargar()
+  }
+
+  async function actualizarFranja(id: string, campo: 'hora_desde' | 'hora_hasta', valor: string) {
+    if (!valor) return
+    setGuardando(true)
+    await supabase.from('empleado_horarios').update({ [campo]: valor }).eq('id', id)
+    setGuardando(false)
+    cargar()
+  }
+
+  async function quitarFranja(id: string) {
+    setGuardando(true)
+    await supabase.from('empleado_horarios').delete().eq('id', id)
+    setGuardando(false)
+    cargar()
+  }
+
+  // Prender el día crea la primera franja; apagarlo borra todas las suyas.
+  async function alternarDia(empId: string, dia: number, prender: boolean) {
+    if (prender) return agregarFranja(empId, dia)
+    setGuardando(true)
+    await supabase.from('empleado_horarios')
+      .delete().eq('empleado_id', empId).eq('dia_semana', dia)
     setGuardando(false)
     cargar()
   }
@@ -259,6 +349,11 @@ export default function Citas({ session }: { session: Session }) {
             <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
               className="px-3 py-1.5 rounded-lg border border-oso-200 text-sm" />
             <span className="text-mute text-sm capitalize ml-1">{fechaLarga(fecha)}</span>
+            {esDueno && (
+              <span className="text-[11px] text-mute ml-auto">
+                Clic en un hueco para agendar
+              </span>
+            )}
           </div>
 
           {cargando ? (
@@ -302,8 +397,27 @@ export default function Citas({ session }: { session: Session }) {
                   {empleados.map(e => {
                     const vents = ventanasDelDia[e.id] ?? []
                     const suyas = citas.filter(c => c.empleado_id === e.id)
+                    // Clic en un hueco de la columna: agenda a esa persona a
+                    // esa hora. Redondea a la media hora más cercana hacia
+                    // abajo, que es como piensa quien mira el calendario.
+                    const clicEnHueco = (ev: React.MouseEvent<HTMLDivElement>) => {
+                      if (!esDueno) return
+                      const caja = ev.currentTarget.getBoundingClientRect()
+                      const min = horarioSalon.abre
+                        + Math.floor(((ev.clientY - caja.top) / ALTO_HORA) * 60 / PASO_GRILLA) * PASO_GRILLA
+                      if (min < horarioSalon.abre || min >= horarioSalon.cierra) return
+                      setNueva({
+                        empleadoId: e.id, empleadoNombre: e.nombre,
+                        hora: aHHMM(min),
+                        servicioId: servicios[0]?.id ?? '',
+                        nombre: '', telefono: '', notas: '',
+                      })
+                    }
                     return (
-                      <div key={e.id} className="flex-1 relative border-r border-oso-100 last:border-r-0">
+                      <div key={e.id}
+                        onClick={clicEnHueco}
+                        title={esDueno ? `Clic para agendar a ${e.nombre}` : undefined}
+                        className={`flex-1 relative border-r border-oso-100 last:border-r-0 ${esDueno ? 'cursor-copy' : ''}`}>
                         {/* Fuera de su horario: rayado suave */}
                         {vents.length === 0 ? (
                           <div className="absolute inset-0 bg-oso-50/70 grid place-items-center">
@@ -334,7 +448,7 @@ export default function Citas({ session }: { session: Session }) {
                           if (ini === null) return null
                           const fin = aMinutos(c.hora_fin) ?? ini + (c.duracion_minutos ?? 60)
                           return (
-                            <button key={c.id} onClick={() => setCitaSel(c)}
+                            <button key={c.id} onClick={ev => { ev.stopPropagation(); setCitaSel(c) }}
                               className="absolute left-1 right-1 rounded-lg px-2 py-1 text-left text-white text-[11px] leading-tight shadow-sm overflow-hidden hover:brightness-110 transition"
                               style={{
                                 top: ((ini - horarioSalon.abre) / 60) * ALTO_HORA + 1,
@@ -342,7 +456,8 @@ export default function Citas({ session }: { session: Session }) {
                                 background: e.color ?? '#8a6a6a',
                               }}>
                               <div className="font-medium truncate">
-                                {c.pedidos?.clientes?.nombre ?? c.pedidos?.clientes?.telefono ?? 'Cliente'}
+                                {c.cliente_nombre ?? c.pedidos?.clientes?.nombre
+                                  ?? c.cliente_telefono ?? c.pedidos?.clientes?.telefono ?? 'Clienta'}
                               </div>
                               <div className="opacity-90 truncate">{c.platos?.nombre ?? 'Servicio'}</div>
                               <div className="opacity-75">{ampm(c.hora)} – {ampm(c.hora_fin)}</div>
@@ -380,56 +495,100 @@ export default function Citas({ session }: { session: Session }) {
                 {/* Plantilla semanal */}
                 <div className="space-y-1.5">
                   {[1, 2, 3, 4, 5, 6, 0].map(dia => {
-                    const p = plantilla.find(x => x.empleado_id === e.id && x.dia_semana === dia)
-                    const on = !!p?.activo
+                    const franjas = franjasDe(e.id, dia)
+                    const on = franjas.length > 0
                     return (
-                      <div key={dia} className="flex items-center gap-2 text-sm">
-                        <label className="flex items-center gap-2 w-28 shrink-0">
+                      <div key={dia} className="flex items-start gap-2 text-sm">
+                        <label className="flex items-center gap-2 w-28 shrink-0 pt-1">
                           <input type="checkbox" checked={on} disabled={!editable || guardando}
-                            onChange={ev => guardarPlantilla(
-                              e.id, dia, ev.target.checked,
-                              p?.hora_desde ?? '08:00', p?.hora_hasta ?? '18:00')} />
+                            onChange={ev => alternarDia(e.id, dia, ev.target.checked)} />
                           <span className={on ? '' : 'text-mute'}>{DIAS[dia]}</span>
                         </label>
-                        {on && (
-                          <>
-                            <input type="time" defaultValue={(p?.hora_desde ?? '08:00').slice(0, 5)}
-                              disabled={!editable}
-                              onBlur={ev => guardarPlantilla(e.id, dia, true, ev.target.value, p?.hora_hasta ?? '18:00')}
-                              className="px-2 py-1 rounded border border-oso-200 text-sm" />
-                            <span className="text-mute">a</span>
-                            <input type="time" defaultValue={(p?.hora_hasta ?? '18:00').slice(0, 5)}
-                              disabled={!editable}
-                              onBlur={ev => guardarPlantilla(e.id, dia, true, p?.hora_desde ?? '08:00', ev.target.value)}
-                              className="px-2 py-1 rounded border border-oso-200 text-sm" />
-                          </>
-                        )}
+
+                        <div className="flex-1 min-w-0 space-y-1">
+                          {franjas.map(f => (
+                            <div key={f.id} className="flex items-center gap-1.5">
+                              <input type="time" defaultValue={f.hora_desde.slice(0, 5)}
+                                disabled={!editable}
+                                onBlur={ev => actualizarFranja(f.id, 'hora_desde', ev.target.value)}
+                                className="px-2 py-1 rounded border border-oso-200 text-sm" />
+                              <span className="text-mute">a</span>
+                              <input type="time" defaultValue={f.hora_hasta.slice(0, 5)}
+                                disabled={!editable}
+                                onBlur={ev => actualizarFranja(f.id, 'hora_hasta', ev.target.value)}
+                                className="px-2 py-1 rounded border border-oso-200 text-sm" />
+                              {editable && franjas.length > 1 && (
+                                <button onClick={() => quitarFranja(f.id)}
+                                  className="text-mute hover:text-red-600 text-xs px-1"
+                                  aria-label="Quitar franja">✕</button>
+                              )}
+                            </div>
+                          ))}
+
+                          {/* Doble jornada: la que corta a mediodía, o la que
+                              entra en la tarde. Cada franja es una fila propia. */}
+                          {on && editable && franjas.length < 3 && (
+                            <button onClick={() => agregarFranja(e.id, dia)}
+                              disabled={guardando}
+                              className="text-[11px] text-oso-700 hover:text-oso-900 underline decoration-dotted">
+                              + otra franja
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )
                   })}
                 </div>
 
-                {/* Excepciones de los próximos 14 días */}
+                {/* Excepciones de las próximas 3 semanas */}
                 <div className="mt-4 pt-3 border-t border-oso-100">
                   <p className="text-[11px] text-mute mb-2">
-                    Marcá los días que NO vas a venir en las próximas dos semanas
+                    Marcá los días que NO vas a venir. Los días en que el salón
+                    no abre ya vienen bloqueados.
                   </p>
                   <div className="flex flex-wrap gap-1.5">
-                    {Array.from({ length: 14 }, (_, i) => sumarDias(hoyISO(), i)).map(f => {
+                    {Array.from({ length: 21 }, (_, i) => sumarDias(hoyISO(), i)).map(f => {
                       const falta = excepciones.some(x => x.empleado_id === e.id && x.fecha === f && !x.trabaja)
                       const d = new Date(`${f}T12:00:00`)
+                      const esFestivo = !!festivos[f]
+                      // El salón manda: si ese día no abre, no tiene sentido
+                      // que alguien marque si viene o no.
+                      const salonCerrado = diasCerrados.has(d.getDay()) || (esFestivo && !abreFestivos)
+                      const sinFranjas = franjasDe(e.id, d.getDay()).length === 0
+
+                      const clase = salonCerrado
+                        ? 'bg-canvas text-mute/60 border border-dashed border-line cursor-not-allowed'
+                        : falta
+                          ? 'bg-red-100 text-red-700 line-through'
+                          : sinFranjas
+                            ? 'bg-canvas text-mute border border-line'
+                            : esFestivo
+                              ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                              : 'bg-oso-100 text-oso-800 hover:bg-oso-200'
+
+                      const titulo = salonCerrado
+                        ? (esFestivo ? `${festivos[f]} — el salón no abre` : 'El salón no abre este día')
+                        : esFestivo
+                          ? `${festivos[f]} — el salón sí abre${falta ? ' · no viene' : ''}`
+                          : sinFranjas
+                            ? 'No trabaja este día según la plantilla'
+                            : falta ? 'No viene' : 'Marcar que no viene'
+
                       return (
-                        <button key={f} disabled={!editable}
+                        <button key={f}
+                          disabled={!editable || salonCerrado}
                           onClick={() => marcarNoViene(e.id, f)}
-                          className={`px-2 py-1 rounded-lg text-[11px] transition-colors ${
-                            falta ? 'bg-red-100 text-red-700 line-through' : 'bg-oso-100 text-oso-800 hover:bg-oso-200'
-                          } disabled:opacity-40`}
-                          title={falta ? 'No viene' : 'Marcar que no viene'}>
+                          className={`px-2 py-1 rounded-lg text-[11px] transition-colors disabled:opacity-60 ${clase}`}
+                          title={titulo}>
                           {DIAS_CORTO[d.getDay()]} {d.getDate()}
+                          {esFestivo && <span className="ml-0.5">★</span>}
                         </button>
                       )
                     })}
                   </div>
+                  <p className="text-[10px] text-mute mt-2">
+                    ★ festivo · punteado = el salón no abre · rojo = no viene
+                  </p>
                 </div>
               </div>
             )
@@ -440,6 +599,88 @@ export default function Citas({ session }: { session: Session }) {
               Para agregar o desactivar personas, andá a Usuarios.
             </p>
           )}
+        </div>
+      )}
+
+      {/* ══════════ Agendar a mano ══════════ */}
+      {nueva && (
+        <div className="fixed inset-0 bg-black/40 grid place-items-center p-4 z-50"
+          onClick={() => setNueva(null)}>
+          <div className="bg-white rounded-2xl p-5 max-w-sm w-full space-y-3"
+            onClick={ev => ev.stopPropagation()}>
+            <div>
+              <h3 className="font-display text-xl font-semibold">Agendar cita</h3>
+              <p className="text-sm text-mute capitalize">
+                {nueva.empleadoNombre} · {fechaLarga(fecha)} · {ampm(nueva.hora)}
+              </p>
+            </div>
+
+            {servicios.length === 0 ? (
+              <p className="text-sm text-mute">
+                No hay servicios con duración cargada. Ponéles la duración en Servicios
+                para poder agendarlos.
+              </p>
+            ) : (
+              <>
+                <label className="block">
+                  <span className="text-[11px] uppercase tracking-wide text-mute">Servicio</span>
+                  <select value={nueva.servicioId}
+                    onChange={ev => setNueva({ ...nueva, servicioId: ev.target.value })}
+                    className="w-full mt-1 px-3 py-1.5 rounded-lg border border-oso-200 text-sm">
+                    {servicios.map(sv => (
+                      <option key={sv.id} value={sv.id}>
+                        {sv.nombre} ({Math.round(sv.duracion_minutos / 6) / 10} h)
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="flex gap-2">
+                  <label className="flex-1">
+                    <span className="text-[11px] uppercase tracking-wide text-mute">Hora</span>
+                    <input type="time" value={nueva.hora}
+                      onChange={ev => setNueva({ ...nueva, hora: ev.target.value })}
+                      className="w-full mt-1 px-3 py-1.5 rounded-lg border border-oso-200 text-sm" />
+                  </label>
+                  <label className="flex-1">
+                    <span className="text-[11px] uppercase tracking-wide text-mute">Clienta</span>
+                    <input value={nueva.nombre} placeholder="Nombre"
+                      onChange={ev => setNueva({ ...nueva, nombre: ev.target.value })}
+                      className="w-full mt-1 px-3 py-1.5 rounded-lg border border-oso-200 text-sm" />
+                  </label>
+                </div>
+
+                <label className="block">
+                  <span className="text-[11px] uppercase tracking-wide text-mute">
+                    Teléfono (opcional)
+                  </span>
+                  <input value={nueva.telefono} placeholder="3001234567"
+                    onChange={ev => setNueva({ ...nueva, telefono: ev.target.value })}
+                    className="w-full mt-1 px-3 py-1.5 rounded-lg border border-oso-200 text-sm" />
+                </label>
+
+                <label className="block">
+                  <span className="text-[11px] uppercase tracking-wide text-mute">Notas</span>
+                  <input value={nueva.notas} placeholder="cabello largo, teñido…"
+                    onChange={ev => setNueva({ ...nueva, notas: ev.target.value })}
+                    className="w-full mt-1 px-3 py-1.5 rounded-lg border border-oso-200 text-sm" />
+                </label>
+              </>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              {servicios.length > 0 && (
+                <button onClick={guardarNueva} disabled={creando}
+                  className="px-4 py-1.5 rounded-lg bg-oso-800 text-white text-sm disabled:opacity-50">
+                  {creando ? 'Agendando…' : 'Agendar'}
+                </button>
+              )}
+              <button onClick={() => setNueva(null)}
+                className="px-4 py-1.5 rounded-lg bg-oso-100 text-oso-800 hover:bg-oso-200 text-sm ml-auto">
+                Cancelar
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -454,8 +695,15 @@ export default function Citas({ session }: { session: Session }) {
             </h3>
             <div className="text-sm space-y-1">
               <p><span className="text-mute">Cliente:</span>{' '}
-                {citaSel.pedidos?.clientes?.nombre ?? '—'}{' '}
-                <span className="text-mute">{citaSel.pedidos?.clientes?.telefono ?? ''}</span></p>
+                {citaSel.cliente_nombre ?? citaSel.pedidos?.clientes?.nombre ?? '—'}{' '}
+                <span className="text-mute">
+                  {citaSel.cliente_telefono ?? citaSel.pedidos?.clientes?.telefono ?? ''}
+                </span>
+                {citaSel.origen === 'panel' && (
+                  <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-oso-100 text-oso-800">
+                    agendada a mano
+                  </span>
+                )}</p>
               <p><span className="text-mute">Horario:</span>{' '}
                 {ampm(citaSel.hora)} – {ampm(citaSel.hora_fin)}
                 {citaSel.duracion_minutos ? ` (${Math.round(citaSel.duracion_minutos / 6) / 10} h)` : ''}</p>
