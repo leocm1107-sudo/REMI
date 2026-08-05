@@ -234,19 +234,20 @@ export default function SaboresDelDia() {
                           </span>
                         ))}
                       </div>
+                    )}
 
-                      {p.sabores.length > 1 && (
-                        <div className="flex gap-2 pt-0.5">
-                          <button onClick={() => marcarTodos(p, true)}
-                            className="text-[10px] text-oso-700 hover:text-oso-900 underline decoration-dotted">
-                            Hay todos
-                          </button>
-                          <button onClick={() => marcarTodos(p, false)}
-                            className="text-[10px] text-mute hover:text-ink underline decoration-dotted">
-                            No hay ninguno
-                          </button>
-                        </div>
-                      )}
+                    {/* Atajos: el día que hay de todo y el día que se acabó todo */}
+                    {p.sabores.length > 1 && (
+                      <div className="flex gap-2 pt-0.5">
+                        <button onClick={() => marcarTodos(p, true)}
+                          className="text-[10px] text-oso-700 hover:text-oso-900 underline decoration-dotted">
+                          Hay todos
+                        </button>
+                        <button onClick={() => marcarTodos(p, false)}
+                          className="text-[10px] text-mute hover:text-ink underline decoration-dotted">
+                          No hay ninguno
+                        </button>
+                      </div>
                     )}
 
                     <div className="flex gap-1">
