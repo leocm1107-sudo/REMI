@@ -120,14 +120,19 @@ export default function Logistica({ session }: { session: Session }) {
     //
     // mi_restaurante_id() devuelve exactamente lo mismo que aplican las
     // políticas, así que lo que se pide es lo que la base deja ver.
-    const [u, sa, rest] = await Promise.all([
+    // El ROL tampoco sale de usuarios_panel, por lo mismo: esa fila dice
+    // qué es la persona, no qué es en ESTE negocio. mi_rol() aplica el
+    // mismo criterio que las políticas. De la tabla queda solo el nombre.
+    const [u, sa, rest, rol] = await Promise.all([
       supabase
         .from('usuarios_panel')
-        .select('nombre, rol')
+        .select('nombre')
         .eq('user_id', session.user.id)
+        .limit(1)
         .maybeSingle(),
       supabase.rpc('es_superadmin'),
       supabase.rpc('mi_restaurante_id'),
+      supabase.rpc('mi_rol'),
     ])
     if (!activo) return
 
@@ -136,9 +141,10 @@ export default function Logistica({ session }: { session: Session }) {
 
     const rid = (rest.data as string | null) ?? null
 
-    if (u.data) {
-      setPerfil({ nombre: (u.data as any).nombre, rol: (u.data as any).rol })
-    }
+    setPerfil({
+      nombre: (u.data as any)?.nombre ?? null,
+      rol: (rol.data === 'superadmin' ? 'dueno' : rol.data) as any,
+    })
 
     if (rid) {
       setRestauranteId(rid)

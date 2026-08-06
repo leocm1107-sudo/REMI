@@ -266,10 +266,16 @@ export default function Agenda({ session }: { session: Session }) {
   useEffect(() => {
     cargar()
     ;(async () => {
-      const u = await supabase.from('usuarios_panel').select('rol').eq('user_id', session.user.id).single()
-      setEsDueno(u.data?.rol === 'dueno')
-      const r = await supabase.from('categorias').select('restaurante_id').limit(1).maybeSingle()
-      if (r.data?.restaurante_id) setRestauranteId(r.data.restaurante_id as string)
+      // Rol y negocio desde la misma fuente que aplican las políticas.
+      // Antes el rol venía de usuarios_panel sin filtrar por negocio, y el
+      // restaurante se deducía leyendo una categoría cualquiera y confiando
+      // en RLS — indirecto, y vacío si el negocio no tiene categorías.
+      const [rol, r] = await Promise.all([
+        supabase.rpc('mi_rol'),
+        supabase.rpc('mi_restaurante_id'),
+      ])
+      setEsDueno(rol.data === 'dueno' || rol.data === 'superadmin')
+      if (r.data) setRestauranteId(r.data as string)
       cargarConfig()
     })()
   }, [session.user.id])

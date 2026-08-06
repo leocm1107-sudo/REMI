@@ -8,7 +8,7 @@ import type { Vocab } from '../lib/vocabulario'
 
 type Perfil = {
   nombre: string | null
-  rol: 'dueno' | 'empleado'
+  rol: 'superadmin' | 'dueno' | 'empleado' | null
   estado_acceso: string
 }
 
@@ -64,16 +64,38 @@ export default function Layout({ session }: { session: Session }) {
   const V = useVocab()
   
 
+  // El ROL sale de mi_rol(), no de usuarios_panel.
+  //
+  // Es la misma clase de problema que ya tuvimos con el restaurante_id.
+  // Un .single() sobre usuarios_panel filtrando solo por user_id trae "el
+  // rol de la persona", no "el rol de la persona EN ESTE negocio". Y peor:
+  // .single() FALLA con más de una fila, así que alguien con acceso a dos
+  // negocios quedaba con perfil en null → estado 'pendiente' → la pantalla
+  // de "Cuenta pendiente de aprobación", sin relación con la causa real.
+  //
+  // El nombre y el estado sí pueden salir de la tabla, pero con
+  // maybeSingle() para que dos filas no tumben la carga entera.
   useEffect(() => {
-    supabase
-      .from('usuarios_panel')
-      .select('nombre, rol, estado_acceso')
-      .eq('user_id', session.user.id)
-      .single()
-      .then(({ data }) => {
-        if (data) setPerfil(data as Perfil)
-        setCargando(false)
+    (async () => {
+      const [rol, fila] = await Promise.all([
+        supabase.rpc('mi_rol'),
+        supabase
+          .from('usuarios_panel')
+          .select('nombre, estado_acceso')
+          .eq('user_id', session.user.id)
+          .limit(1)
+          .maybeSingle(),
+      ])
+      setPerfil({
+        nombre: (fila.data as any)?.nombre ?? null,
+        rol: (rol.data as Perfil['rol']) ?? null,
+        // Un superadmin no depende de que alguien lo apruebe en cada negocio.
+        estado_acceso: rol.data === 'superadmin'
+          ? 'aprobado'
+          : ((fila.data as any)?.estado_acceso ?? 'pendiente'),
       })
+      setCargando(false)
+    })()
   }, [session.user.id])
 
   // Plataforma: solo para quien esté en plataforma_admins.
@@ -134,7 +156,7 @@ export default function Layout({ session }: { session: Session }) {
   if (estado === 'pendiente') return <PantallaEspera onSalir={cerrarSesion} tipo="pendiente" />
   if (estado === 'rechazado') return <PantallaEspera onSalir={cerrarSesion} tipo="rechazado" />
 
-  const esDueno = perfil?.rol === 'dueno' || esSuperadmin
+  const esDueno = perfil?.rol === 'dueno' || perfil?.rol === 'superadmin' || esSuperadmin
   const F = marca.features ?? {}
   const visibles: Seccion[] = [
     ...seccionesDe(V).filter(s =>

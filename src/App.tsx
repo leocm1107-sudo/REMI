@@ -17,6 +17,7 @@ import Agenda from './pages/Agenda'
 import Personalizados from './pages/Personalizados'
 import Citas from './pages/Citas'
 import Admin from './pages/Admin'
+import SoloDueno from './components/SoloDueno'
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -111,15 +112,21 @@ export default function App() {
           <Route index element={<Pedidos session={session} />} />
           <Route path="personalizados" element={<Personalizados session={session} />} />
           <Route path="menu" element={<Menu session={session} />} />
-          <Route path="importar" element={<ImportarMenu session={session} />} />
           <Route path="agenda" element={<Agenda session={session} />} />
           <Route path="citas" element={<Citas session={session} />} />
           <Route path="admin" element={<Admin session={session} />} />
           <Route path="logistica" element={<Logistica session={session} />} />
-          <Route path="zonas" element={<ZonasDomicilio session={session} />} />
-          <Route path="clientes" element={<Clientes session={session} />} />
-          <Route path="usuarios" element={<Usuarios session={session} />} />
-          <Route path="configuracion" element={<Configuracion session={session} />} />
+          {/* Estas cuatro son de dueño. Hasta ahora `soloDueno` en Layout solo
+              las escondía del menú: un empleado que escribiera /configuracion
+              en la barra de direcciones renderizaba la pantalla igual, y lo
+              único que lo separaba de los datos era RLS. Una defensa sola no
+              alcanza cuando adentro está la lista de clientes, el teléfono
+              del jefe y las tarifas. */}
+          <Route path="zonas" element={<SoloDueno><ZonasDomicilio session={session} /></SoloDueno>} />
+          <Route path="clientes" element={<SoloDueno><Clientes session={session} /></SoloDueno>} />
+          <Route path="usuarios" element={<SoloDueno><Usuarios session={session} /></SoloDueno>} />
+          <Route path="importar" element={<SoloDueno><ImportarMenu session={session} /></SoloDueno>} />
+          <Route path="configuracion" element={<SoloDueno><Configuracion session={session} /></SoloDueno>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

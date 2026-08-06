@@ -48,14 +48,21 @@ export default function Menu({ session }: { session: Session }) {
   useEffect(() => {
     let activo = true
     async function cargar() {
-      const [u, c, p, f] = await Promise.all([
-        supabase.from('usuarios_panel').select('nombre, rol').eq('user_id', session.user.id).single(),
+      // El rol va por mi_rol() —única fuente, y la misma que aplica RLS—.
+      // De la tabla solo sale el nombre, y con maybeSingle() para que dos
+      // filas no dejen la pantalla sin cargar.
+      const [u, c, p, f, rol] = await Promise.all([
+        supabase.from('usuarios_panel').select('nombre').eq('user_id', session.user.id).limit(1).maybeSingle(),
         supabase.from('categorias').select('*').order('orden', { ascending: true, nullsFirst: false }).order('nombre'),
         supabase.from('platos').select('*').order('orden', { ascending: true, nullsFirst: false }).order('nombre'),
-        supabase.from('plato_fotos').select('*').order('orden', { ascending: true, nullsFirst: false })
+        supabase.from('plato_fotos').select('*').order('orden', { ascending: true, nullsFirst: false }),
+        supabase.rpc('mi_rol')
       ])
       if (!activo) return
-      if (u.data)  setPerfil(u.data as PerfilUsuario)
+      setPerfil({
+        nombre: (u.data as any)?.nombre ?? null,
+        rol: (rol.data === 'superadmin' ? 'dueno' : rol.data) as any,
+      } as PerfilUsuario)
       if (c.data)  setCategorias(c.data as Categoria[])
       if (p.data)  setPlatos(p.data as Plato[])
       if (f.data)  setFotos(f.data as FotoGaleria[])

@@ -140,8 +140,11 @@ export default function Citas({ session }: { session: Session }) {
   // ── Identidad y restaurante ──────────────────────────────
   useEffect(() => {
     (async () => {
-      const u = await supabase.from('usuarios_panel').select('rol').eq('user_id', session.user.id).single()
-      setEsDueno(u.data?.rol === 'dueno')
+      // El rol sale de mi_rol(): un select sobre usuarios_panel filtrando
+      // solo por user_id trae el rol de la persona, no el que tiene en ESTE
+      // negocio — y .single() revienta si hay más de una fila.
+      const rol = await supabase.rpc('mi_rol')
+      setEsDueno(rol.data === 'dueno' || rol.data === 'superadmin')
       // Antes se deducía leyendo cualquier categoría y confiando en que RLS
       // devolviera la del negocio correcto. Funciona, pero es indirecto y se
       // rompe si el negocio no tiene categorías. mi_restaurante_id() lo dice
