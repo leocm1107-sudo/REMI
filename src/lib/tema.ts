@@ -7,7 +7,10 @@
 import { supabase } from './supabase'
 import { vocabDe, type Vocab } from './vocabulario'
 
-const RESTAURANTE_ID = import.meta.env.VITE_RESTAURANTE_ID as string
+// Se exporta porque el Layout lo necesita: un superadmin que entra a otro
+// panel tiene que alinear qué negocio está mirando con el sitio en el que
+// está parado. Si no, ve la marca de uno y los datos de otro.
+export const RESTAURANTE_ID = import.meta.env.VITE_RESTAURANTE_ID as string
 
 export type Marca = {
   nombre: string

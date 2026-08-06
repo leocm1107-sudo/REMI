@@ -166,7 +166,7 @@ export default function Citas({ session }: { session: Session }) {
         .eq('fecha', fecha),
       supabase.from('horarios_restaurante').select('dia_semana, hora_apertura, hora_cierre, cerrado').eq('dia_semana', dow).maybeSingle(),
       supabase.from('festivos_colombia').select('fecha, nombre')
-        .gte('fecha', hoyISO()).lte('fecha', sumarDias(hoyISO(), 21)),
+        .gte('fecha', hoyISO()).lte('fecha', sumarDias(hoyISO(), 120)).order('fecha'),
       supabase.from('horarios_restaurante').select('dia_semana, cerrado'),
       supabase.from('restaurantes').select('abre_festivos').maybeSingle(),
     ])
@@ -286,6 +286,55 @@ export default function Citas({ session }: { session: Session }) {
   async function quitarFranja(id: string) {
     setGuardando(true)
     await supabase.from('empleado_horarios').delete().eq('id', id)
+    setGuardando(false)
+    cargar()
+  }
+
+  // Los días en que el salón abre. Copiar a un domingo cerrado no sirve
+  // de nada, así que las copias solo alcanzan a estos.
+  const diasAbiertos = [1, 2, 3, 4, 5, 6, 0].filter(d => !diasCerrados.has(d))
+
+  // Copiar el horario de un día a los demás días de esa persona.
+  async function copiarDiaATodos(empId: string, dia: number) {
+    const origen = franjasDe(empId, dia)
+    if (origen.length === 0) return
+    if (!confirm(`¿Poner este mismo horario en los demás días? Reemplaza lo que tengan.`)) return
+
+    setGuardando(true)
+    const otros = diasAbiertos.filter(d => d !== dia)
+    await supabase.from('empleado_horarios')
+      .delete().eq('empleado_id', empId).in('dia_semana', otros)
+    await supabase.from('empleado_horarios').insert(
+      otros.flatMap(d => origen.map(f => ({
+        empleado_id: empId, dia_semana: d,
+        hora_desde: f.hora_desde, hora_hasta: f.hora_hasta, activo: true,
+      }))))
+    setGuardando(false)
+    cargar()
+  }
+
+  // Copiar la semana completa de una persona al resto del equipo. Es el que
+  // más tiempo ahorra: cuatro personas con el mismo horario base son cuatro
+  // veces el mismo trabajo hecho a mano.
+  async function copiarPersonaATodos(empId: string) {
+    const mias = plantilla.filter(p => p.empleado_id === empId && p.activo)
+    const otros = empleados.filter(e => e.id !== empId)
+    if (otros.length === 0) return
+    const nombre = empleados.find(e => e.id === empId)?.nombre ?? ''
+    if (!confirm(
+      `¿Copiar el horario de ${nombre} a las otras ${otros.length} personas?\n\n` +
+      `Se reemplaza el horario que tengan. Las excepciones por fecha no se tocan.`)) return
+
+    setGuardando(true)
+    const ids = otros.map(e => e.id)
+    await supabase.from('empleado_horarios').delete().in('empleado_id', ids)
+    if (mias.length > 0) {
+      await supabase.from('empleado_horarios').insert(
+        ids.flatMap(id => mias.map(f => ({
+          empleado_id: id, dia_semana: f.dia_semana,
+          hora_desde: f.hora_desde, hora_hasta: f.hora_hasta, activo: true,
+        }))))
+    }
     setGuardando(false)
     cargar()
   }
@@ -490,6 +539,13 @@ export default function Citas({ session }: { session: Session }) {
                   <span className="w-3 h-3 rounded-full" style={{ background: e.color ?? '#999' }} />
                   <h3 className="font-medium">{e.nombre}</h3>
                   {!editable && <span className="text-[11px] text-mute">(solo lectura)</span>}
+                  {esDueno && empleados.length > 1 && (
+                    <button onClick={() => copiarPersonaATodos(e.id)}
+                      disabled={guardando}
+                      className="ml-auto text-[11px] px-2 py-1 rounded-lg bg-oso-100 text-oso-800 hover:bg-oso-200 transition-colors">
+                      Copiar esta semana a todo el equipo
+                    </button>
+                  )}
                 </div>
 
                 {/* Plantilla semanal */}
@@ -527,12 +583,21 @@ export default function Citas({ session }: { session: Session }) {
 
                           {/* Doble jornada: la que corta a mediodía, o la que
                               entra en la tarde. Cada franja es una fila propia. */}
-                          {on && editable && franjas.length < 3 && (
-                            <button onClick={() => agregarFranja(e.id, dia)}
-                              disabled={guardando}
-                              className="text-[11px] text-oso-700 hover:text-oso-900 underline decoration-dotted">
-                              + otra franja
-                            </button>
+                          {on && editable && (
+                            <div className="flex gap-3">
+                              {franjas.length < 3 && (
+                                <button onClick={() => agregarFranja(e.id, dia)}
+                                  disabled={guardando}
+                                  className="text-[11px] text-oso-700 hover:text-oso-900 underline decoration-dotted">
+                                  + otra franja
+                                </button>
+                              )}
+                              <button onClick={() => copiarDiaATodos(e.id, dia)}
+                                disabled={guardando}
+                                className="text-[11px] text-mute hover:text-ink underline decoration-dotted">
+                                copiar a los demás días
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -589,6 +654,43 @@ export default function Citas({ session }: { session: Session }) {
                   <p className="text-[10px] text-mute mt-2">
                     ★ festivo · punteado = el salón no abre · rojo = no viene
                   </p>
+                </div>
+
+                {/* ── Festivos ──────────────────────────────────────
+                    Van aparte de la tira porque llegan más lejos: el
+                    próximo puede caer en dos meses y ahí no se ve. Y
+                    porque en un festivo la pregunta es otra: no "¿venís
+                    ese día?" sino "¿de los que abrimos, en cuáles estás?". */}
+                <div className="mt-4 pt-3 border-t border-oso-100">
+                  <p className="text-[11px] text-mute mb-2">
+                    Festivos de los próximos meses
+                  </p>
+                  {!abreFestivos ? (
+                    <p className="text-[11px] text-mute">
+                      El salón no abre los festivos. Se cambia en Logística → Horarios.
+                    </p>
+                  ) : Object.keys(festivos).length === 0 ? (
+                    <p className="text-[11px] text-mute">No hay festivos próximos.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(festivos).slice(0, 8).map(([f, nombreFestivo]) => {
+                        const falta = excepciones.some(x => x.empleado_id === e.id && x.fecha === f && !x.trabaja)
+                        const d = new Date(`${f}T12:00:00`)
+                        return (
+                          <button key={f} disabled={!editable}
+                            onClick={() => marcarNoViene(e.id, f)}
+                            title={`${nombreFestivo}${falta ? ' — no viene' : ' — sí viene'}`}
+                            className={`px-2 py-1 rounded-lg text-[11px] transition-colors disabled:opacity-60 ${
+                              falta
+                                ? 'bg-red-100 text-red-700 line-through'
+                                : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                            }`}>
+                            ★ {DIAS_CORTO[d.getDay()]} {d.getDate()}/{d.getMonth() + 1}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             )

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { cn } from '../lib/utils'
-import { useMarca, useVocab } from '../lib/tema'
+import { useMarca, useVocab, RESTAURANTE_ID } from '../lib/tema'
 import type { Vocab } from '../lib/vocabulario'
 
 type Perfil = {
@@ -32,17 +32,17 @@ type Seccion = {
 }
 
 const seccionesDe = (V: Vocab): Seccion[] => [
-  { to: '/',               label: V.Pedidos,             end: true,  soloDueno: false },
+  { to: '/',               label: V.Pedidos,             end: true,  soloDueno: false, ocultaSi: 'panel_pedidos' },
   { to: '/personalizados', label: 'Personalizadas',      end: false, soloDueno: false, feature: 'personalizacion', ocultaSi: 'panel_personalizados' },
-  { to: '/menu',           label: V.Productos,           end: false, soloDueno: false },
+  { to: '/menu',           label: V.Productos,           end: false, soloDueno: false, ocultaSi: 'panel_menu' },
   { to: '/importar',       label: `Importar ${V.carta}`, end: false, soloDueno: true,  ocultaSi: 'importar_carta' },
   { to: '/agenda',         label: 'Agenda',              end: false, soloDueno: false, feature: 'agendamiento' },
   { to: '/citas',          label: 'Agenda',              end: false, soloDueno: false, feature: 'agenda_servicios' },
-  { to: '/logistica',      label: 'Logística',           end: false, soloDueno: false },
+  { to: '/logistica',      label: 'Logística',           end: false, soloDueno: false, ocultaSi: 'panel_logistica' },
   { to: '/zonas',          label: 'Zonas de domicilio',  end: false, soloDueno: true,  ocultaSi: 'domicilio' },
-  { to: '/clientes',       label: V.Clientes,            end: false, soloDueno: true },
-  { to: '/usuarios',       label: 'Usuarios',            end: false, soloDueno: true },
-  { to: '/configuracion',  label: 'Configuración',       end: false, soloDueno: true },
+  { to: '/clientes',       label: V.Clientes,            end: false, soloDueno: true,  ocultaSi: 'panel_clientes' },
+  { to: '/usuarios',       label: 'Usuarios',            end: false, soloDueno: true,  ocultaSi: 'panel_usuarios' },
+  { to: '/configuracion',  label: 'Configuración',       end: false, soloDueno: true,  ocultaSi: 'panel_configuracion' },
 ]
 
 export default function Layout({ session }: { session: Session }) {
@@ -68,9 +68,26 @@ export default function Layout({ session }: { session: Session }) {
       })
   }, [session.user.id])
 
-  // Plataforma: solo para quien esté en plataforma_admins
+  // Plataforma: solo para quien esté en plataforma_admins.
+  //
+  // Y algo más: el tema sale de VITE_RESTAURANTE_ID (build) pero los datos
+  // salen de obtener_restaurante_actual(), que para un superadmin devuelve
+  // restaurante_activo. Si venía "viendo como" otro negocio y entra a este
+  // sitio, vería la marca de uno con los datos del otro. Entrar a un panel
+  // ES mirar ese negocio, así que se alinea solo.
   useEffect(() => {
-    supabase.rpc('es_superadmin').then(({ data }) => setEsSuperadmin(data === true))
+    (async () => {
+      const { data } = await supabase.rpc('es_superadmin')
+      if (data !== true) { setEsSuperadmin(false); return }
+      setEsSuperadmin(true)
+
+      const { data: yo } = await supabase.from('plataforma_admins')
+        .select('restaurante_activo').eq('user_id', session.user.id).maybeSingle()
+      if (RESTAURANTE_ID && (yo as any)?.restaurante_activo !== RESTAURANTE_ID) {
+        await supabase.rpc('admin_ver_como', { p_restaurante_id: RESTAURANTE_ID })
+        window.location.reload()   // los datos ya cargados son del negocio anterior
+      }
+    })()
   }, [session.user.id])
 
   useEffect(() => { setMenuAbierto(false) }, [location.pathname])

@@ -16,6 +16,8 @@ import { supabase } from '../lib/supabase'
 const CLAVES_CODIGO = [
   'pedidos', 'catalogo', 'stock', 'personalizacion', 'importar_carta',
   'sabores_dia', 'panel_personalizados',
+  'panel_pedidos', 'panel_menu', 'panel_logistica',
+  'panel_clientes', 'panel_usuarios', 'panel_configuracion',
   'agendamiento', 'agenda_servicios', 'cambios_cliente',
   'domicilio', 'maps',
   'voz', 'pagos_ia', 'aviso_jefe',
@@ -31,6 +33,7 @@ type Negocio = {
   logo_url: string | null
   color_primario: string | null
   phone_number_id: string | null
+  panel_url: string | null
   tiene_token: boolean
   features: Record<string, boolean>
   usuarios: number
@@ -109,9 +112,29 @@ export default function Admin({ session }: { session: Session }) {
     cargar()
   }
 
+  // Cada negocio vive en su propio despliegue. Entrar a su panel es abrir SU
+  // sitio: ahí la marca y los datos coinciden, y el Layout alinea solo el
+  // negocio activo. Si todavía no tiene URL cargada, se cae al modo anterior
+  // (mirar desde acá), que sirve pero muestra la marca de este sitio.
+  async function abrirPanel(n: Negocio) {
+    if (n.panel_url) { window.open(n.panel_url, '_blank', 'noopener'); return }
+    await supabase.rpc('admin_ver_como', { p_restaurante_id: n.id })
+    window.location.href = '/'
+  }
+
+  async function guardarUrl(n: Negocio) {
+    const url = prompt(`URL del panel de ${n.nombre}`, n.panel_url ?? 'https://')
+    if (url === null) return
+    const { data } = await supabase.rpc('admin_set_panel_url', {
+      p_restaurante_id: n.id, p_url: url,
+    })
+    if ((data as any)?.ok !== true) { alert('URL inválida. Tiene que empezar con https://'); return }
+    cargar()
+  }
+
   async function verComo(id: string | null) {
     await supabase.rpc('admin_ver_como', { p_restaurante_id: id })
-    window.location.href = '/'   // todo el panel cuelga de obtener_restaurante_actual()
+    window.location.href = '/'
   }
 
   async function guardarModulo(m: Modulo) {
@@ -255,9 +278,13 @@ export default function Admin({ session }: { session: Session }) {
                     })}
 
                     <div className="pt-2 border-t border-line flex items-center gap-2 flex-wrap">
-                      <button onClick={() => verComo(n.id)}
+                      <button onClick={() => abrirPanel(n)}
                         className="px-3 py-1.5 rounded-lg bg-oso-100 text-oso-800 hover:bg-oso-200 text-sm">
-                        Ver su panel
+                        {n.panel_url ? 'Abrir su panel ↗' : 'Ver su panel'}
+                      </button>
+                      <button onClick={() => guardarUrl(n)}
+                        className="px-3 py-1.5 rounded-lg bg-canvas text-mute hover:text-ink border border-line text-sm">
+                        {n.panel_url ? 'Cambiar URL' : 'Poner URL'}
                       </button>
                       <button onClick={() => pausar(n)}
                         className={`px-3 py-1.5 rounded-lg text-sm ${
@@ -268,6 +295,7 @@ export default function Admin({ session }: { session: Session }) {
                       <span className="text-[11px] text-mute ml-auto">
                         plan {n.plan ?? '—'} · {n.phone_number_id ?? 'sin número'} ·{' '}
                         {n.tiene_token ? 'con token' : 'sin token'}
+                        {!n.panel_url && ' · sin URL de panel'}
                       </span>
                     </div>
                   </div>
