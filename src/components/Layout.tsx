@@ -48,6 +48,9 @@ const seccionesDe = (V: Vocab): Seccion[] => [
 export default function Layout({ session }: { session: Session }) {
   const [perfil, setPerfil]   = useState<Perfil | null>(null)
   const [esSuperadmin, setEsSuperadmin] = useState(false)
+  // Para el salto rápido entre paneles desde la cabecera
+  const [otrosPaneles, setOtrosPaneles] = useState<{ id: string; nombre: string; panel_url: string | null }[]>([])
+  const [saltoAbierto, setSaltoAbierto] = useState(false)
   const [cargando, setCargando] = useState(true)
   const [menuAbierto, setMenuAbierto] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -86,11 +89,18 @@ export default function Layout({ session }: { session: Session }) {
       if (RESTAURANTE_ID && (yo as any)?.restaurante_activo !== RESTAURANTE_ID) {
         await supabase.rpc('admin_ver_como', { p_restaurante_id: RESTAURANTE_ID })
         window.location.reload()   // los datos ya cargados son del negocio anterior
+        return
       }
+
+      // La lista para saltar de un panel a otro sin pasar por Plataforma
+      const { data: negs } = await supabase.rpc('admin_negocios')
+      setOtrosPaneles(((negs ?? []) as any[])
+        .filter(n => n.id !== RESTAURANTE_ID)
+        .map(n => ({ id: n.id, nombre: n.nombre, panel_url: n.panel_url })))
     })()
   }, [session.user.id])
 
-  useEffect(() => { setMenuAbierto(false) }, [location.pathname])
+  useEffect(() => { setMenuAbierto(false); setSaltoAbierto(false) }, [location.pathname])
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -166,11 +176,46 @@ export default function Layout({ session }: { session: Session }) {
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 relative">
               {marca.logo_url
                 ? <img src={marca.logo_url} alt="" className="h-7 w-7 rounded-full object-cover" />
                 : <span className="text-xl">{marca.logo_emoji}</span>}
               <span className="font-display font-semibold tracking-tight">{marca.nombre}</span>
+
+              {/* Salto rápido entre paneles. Solo para la plataforma: cada
+                  negocio vive en su propio sitio, y sin esto había que
+                  acordarse de la URL de cada uno. */}
+              {esSuperadmin && otrosPaneles.length > 0 && (
+                <>
+                  <button
+                    onClick={() => setSaltoAbierto(v => !v)}
+                    aria-label="Cambiar de panel"
+                    className="text-mute hover:text-ink text-xs px-1 leading-none"
+                  >▾</button>
+                  {saltoAbierto && (
+                    <div className="absolute left-0 top-full mt-2 w-56 bg-surface border border-line rounded-xl shadow-lg overflow-hidden z-30">
+                      <div className="px-3 py-2 text-[10px] uppercase tracking-wide text-mute border-b border-line">
+                        Ir a otro panel
+                      </div>
+                      {otrosPaneles.map(n => (
+                        n.panel_url ? (
+                          <a key={n.id} href={n.panel_url} target="_blank" rel="noreferrer"
+                            onClick={() => setSaltoAbierto(false)}
+                            className="block px-4 py-2.5 text-sm text-ink hover:bg-canvas transition-colors">
+                            {n.nombre} ↗
+                          </a>
+                        ) : (
+                          <span key={n.id}
+                            title="Sin URL cargada — ponéla en Plataforma"
+                            className="block px-4 py-2.5 text-sm text-mute/60">
+                            {n.nombre} · sin URL
+                          </span>
+                        )
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
 

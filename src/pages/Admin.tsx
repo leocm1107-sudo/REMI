@@ -76,7 +76,7 @@ export default function Admin({ session }: { session: Session }) {
     setNegocios((neg.data ?? []) as Negocio[])
     setModulos((cat.data ?? []) as Modulo[])
     setDesync((dsy.data ?? { huerfanas: [], sin_ficha: [] }) as Desync)
-    setViendoComo((mio.data as any)?.restaurante_activo ?? null)
+    setViendoComo((mio.data as any)?.restaurante_activo ?? null)   // solo informativo
   }
 
   useEffect(() => {
@@ -113,28 +113,35 @@ export default function Admin({ session }: { session: Session }) {
   }
 
   // Cada negocio vive en su propio despliegue. Entrar a su panel es abrir SU
-  // sitio: ahí la marca y los datos coinciden, y el Layout alinea solo el
-  // negocio activo. Si todavía no tiene URL cargada, se cae al modo anterior
-  // (mirar desde acá), que sirve pero muestra la marca de este sitio.
+  // sitio, y punto: ahí la marca y los datos coinciden, y el Layout alinea
+  // solo el negocio activo al entrar.
+  //
+  // Antes había un segundo modo —mirar otro negocio desde este mismo sitio—
+  // que quedó incompatible con esa alineación: uno cambiaba el negocio activo
+  // y el otro lo devolvía. Se eliminó. Si falta la URL, se pide en el momento.
   async function abrirPanel(n: Negocio) {
-    if (n.panel_url) { window.open(n.panel_url, '_blank', 'noopener'); return }
-    await supabase.rpc('admin_ver_como', { p_restaurante_id: n.id })
-    window.location.href = '/'
+    let url = n.panel_url
+    if (!url) {
+      url = await pedirUrl(n)
+      if (!url) return
+    }
+    window.open(url, '_blank', 'noopener')
   }
 
-  async function guardarUrl(n: Negocio) {
-    const url = prompt(`URL del panel de ${n.nombre}`, n.panel_url ?? 'https://')
-    if (url === null) return
+  async function pedirUrl(n: Negocio): Promise<string | null> {
+    const url = prompt(
+      `¿Cuál es la URL del panel de ${n.nombre}?\n\nEs su sitio en Cloudflare Pages, ej. https://moffin.pages.dev`,
+      n.panel_url ?? 'https://')
+    if (url === null) return null
     const { data } = await supabase.rpc('admin_set_panel_url', {
       p_restaurante_id: n.id, p_url: url,
     })
-    if ((data as any)?.ok !== true) { alert('URL inválida. Tiene que empezar con https://'); return }
+    if ((data as any)?.ok !== true) {
+      alert('URL inválida. Tiene que empezar con https://')
+      return null
+    }
     cargar()
-  }
-
-  async function verComo(id: string | null) {
-    await supabase.rpc('admin_ver_como', { p_restaurante_id: id })
-    window.location.href = '/'
+    return url
   }
 
   async function guardarModulo(m: Modulo) {
@@ -169,18 +176,6 @@ export default function Admin({ session }: { session: Session }) {
           {modulos.filter(m => m.estado === 'estable').length} módulos disponibles
         </p>
       </div>
-
-      {viendoComo && (
-        <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
-          <span className="text-sm text-amber-900">
-            Estás viendo el panel como{' '}
-            <strong>{negocios.find(n => n.id === viendoComo)?.nombre ?? 'otro negocio'}</strong>.
-          </span>
-          <button onClick={() => verComo(null)} className="text-sm underline text-amber-900">
-            Volver a lo mío
-          </button>
-        </div>
-      )}
 
       {hayDesync && (
         <div className="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-900 space-y-1">
@@ -280,12 +275,14 @@ export default function Admin({ session }: { session: Session }) {
                     <div className="pt-2 border-t border-line flex items-center gap-2 flex-wrap">
                       <button onClick={() => abrirPanel(n)}
                         className="px-3 py-1.5 rounded-lg bg-oso-100 text-oso-800 hover:bg-oso-200 text-sm">
-                        {n.panel_url ? 'Abrir su panel ↗' : 'Ver su panel'}
+                        Abrir su panel ↗
                       </button>
-                      <button onClick={() => guardarUrl(n)}
-                        className="px-3 py-1.5 rounded-lg bg-canvas text-mute hover:text-ink border border-line text-sm">
-                        {n.panel_url ? 'Cambiar URL' : 'Poner URL'}
-                      </button>
+                      {n.panel_url && (
+                        <button onClick={() => pedirUrl(n)}
+                          className="px-3 py-1.5 rounded-lg bg-canvas text-mute hover:text-ink border border-line text-sm">
+                          Cambiar URL
+                        </button>
+                      )}
                       <button onClick={() => pausar(n)}
                         className={`px-3 py-1.5 rounded-lg text-sm ${
                           n.activo ? 'bg-red-50 text-red-700 hover:bg-red-100'
