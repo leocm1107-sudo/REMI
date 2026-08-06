@@ -48,6 +48,11 @@ const seccionesDe = (V: Vocab): Seccion[] => [
 export default function Layout({ session }: { session: Session }) {
   const [perfil, setPerfil]   = useState<Perfil | null>(null)
   const [esSuperadmin, setEsSuperadmin] = useState(false)
+  // Las páginas hijas consultan apenas montan. Si el negocio activo todavía
+  // no está alineado con este sitio, esas consultas salen con el id del
+  // negocio anterior: llegan vacías, y la pantalla queda en blanco sin error
+  // visible. Por eso el contenido no se renderiza hasta verificarlo.
+  const [alineando, setAlineando] = useState(true)
   // Para el salto rápido entre paneles desde la cabecera
   const [otrosPaneles, setOtrosPaneles] = useState<{ id: string; nombre: string; panel_url: string | null }[]>([])
   const [saltoAbierto, setSaltoAbierto] = useState(false)
@@ -81,7 +86,7 @@ export default function Layout({ session }: { session: Session }) {
   useEffect(() => {
     (async () => {
       const { data } = await supabase.rpc('es_superadmin')
-      if (data !== true) { setEsSuperadmin(false); return }
+      if (data !== true) { setEsSuperadmin(false); setAlineando(false); return }
       setEsSuperadmin(true)
 
       const { data: yo } = await supabase.from('plataforma_admins')
@@ -89,8 +94,9 @@ export default function Layout({ session }: { session: Session }) {
       if (RESTAURANTE_ID && (yo as any)?.restaurante_activo !== RESTAURANTE_ID) {
         await supabase.rpc('admin_ver_como', { p_restaurante_id: RESTAURANTE_ID })
         window.location.reload()   // los datos ya cargados son del negocio anterior
-        return
+        return                     // sin soltar el gate: la página se va a recargar
       }
+      setAlineando(false)
 
       // La lista para saltar de un panel a otro sin pasar por Plataforma
       const { data: negs } = await supabase.rpc('admin_negocios')
@@ -116,7 +122,7 @@ export default function Layout({ session }: { session: Session }) {
     await supabase.auth.signOut()
   }
 
-  if (cargando) {
+  if (cargando || alineando) {
     return (
       <div className="min-h-screen grid place-items-center text-mute text-sm">
         Cargando…

@@ -46,6 +46,33 @@ const mezclar = (c: [number, number, number], hacia: number, p: number): [number
 const triple = (c: [number, number, number]) => `${c[0]} ${c[1]} ${c[2]}`
 const esOscuro = (c: [number, number, number]) => (c[0] * 299 + c[1] * 587 + c[2] * 114) / 1000 < 128
 
+// Luminancia relativa y contraste WCAG. Se usa para que el texto secundario
+// no quede fijo en un gris que funciona sobre blanco y desaparece sobre una
+// foto de fondo o un color con carga.
+function luminancia(c: [number, number, number]): number {
+  const f = (v: number) => {
+    const x = v / 255
+    return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4)
+  }
+  return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2])
+}
+function contraste(a: [number, number, number], b: [number, number, number]): number {
+  const [l1, l2] = [luminancia(a), luminancia(b)].sort((x, y) => y - x)
+  return (l1 + 0.05) / (l2 + 0.05)
+}
+// Acerca el color al texto principal hasta alcanzar el contraste pedido.
+// Devuelve el más suave que todavía se lee.
+function legible(
+  base: [number, number, number], ink: [number, number, number],
+  fondo: [number, number, number], minimo: number,
+): [number, number, number] {
+  let c = base
+  for (let i = 0; i <= 20 && contraste(c, fondo) < minimo; i++) {
+    c = mezclar(c, esOscuro(fondo) ? 255 : 0, 0.08)
+  }
+  return contraste(c, fondo) >= minimo ? c : ink
+}
+
 function escala(base: [number, number, number]): Record<number, [number, number, number]> {
   return {
     50: mezclar(base, 255, 0.95), 100: mezclar(base, 255, 0.88), 200: mezclar(base, 255, 0.75),
@@ -95,12 +122,22 @@ export function aplicarTema(r: {
   const fondo = r.color_fondo ? hexARgb(r.color_fondo) : null
   if (fondo) {
     set('canvas', fondo)
+    // El texto secundario se calculaba con un gris fijo (#6B7280 en claro).
+    // Sobre un fondo con color —o peor, sobre la foto de fondo— ese gris
+    // queda por debajo del mínimo legible y el panel se vuelve ilegible.
+    // Ahora se acerca al texto principal hasta alcanzar contraste real.
+    // Con foto de fondo se exige más, porque el texto compite con la imagen.
+    const minMute = marca.imagen_fondo_url ? 6 : 4.8
     if (esOscuro(fondo)) {
+      const ink: [number, number, number] = [242, 242, 240]
       set('surface', mezclar(fondo, 255, 0.07)); set('line', mezclar(fondo, 255, 0.16))
-      set('ink', [242, 242, 240]); set('mute', [156, 163, 175])
+      set('ink', ink)
+      set('mute', legible([156, 163, 175], ink, fondo, minMute))
     } else {
-      set('surface', mezclar(fondo, 255, 0.6)); set('line', mezclar(fondo, 0, 0.09))
-      set('ink', [26, 26, 26]); set('mute', [107, 114, 128])
+      const ink: [number, number, number] = [26, 26, 26]
+      set('surface', mezclar(fondo, 255, 0.6)); set('line', mezclar(fondo, 0, 0.12))
+      set('ink', ink)
+      set('mute', legible([107, 114, 128], ink, fondo, minMute))
     }
     if (marca.imagen_fondo_url) {
     document.documentElement.style.setProperty('--fondo-foto', `url(${marca.imagen_fondo_url})`)
