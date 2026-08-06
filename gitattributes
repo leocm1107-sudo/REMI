@@ -1,0 +1,20 @@
+# Normaliza el fin de línea en el repo.
+#
+# Hoy App.tsx está en CRLF y el resto en LF, así que git muestra el archivo
+# entero como modificado aunque no cambie ni una línea de lógica: 128 líneas
+# de diff que son solo el salto de línea. Eso hace que la historia de git no
+# sirva para lo único que sirve, que es ver qué cambió de verdad.
+#
+# Después de agregar este archivo, una vez:
+#   git add --renormalize .
+#   git commit -m "normalizar fin de línea"
+
+* text=auto eol=lf
+
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.webp binary
+*.ico  binary
+*.pdf  binary
+*.zip  binary
