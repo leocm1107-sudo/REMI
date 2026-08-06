@@ -6,6 +6,7 @@ import { cn, formatCOP } from '../lib/utils'
 import type { PerfilUsuario } from '../lib/types'
 import { useMarca } from '../lib/tema'
 import Festivos from '../components/Festivos'
+import { RESTAURANTE_ID } from '../lib/tema'
 
 type ColaItem = {
   id: string
@@ -106,57 +107,72 @@ export default function Logistica({ session }: { session: Session }) {
   const [restauranteId, setRestauranteId] = useState<string | null>(null)
   const [tab, setTab] = useState<'cola' | 'horarios' | 'pagos'>('cola')
   const marca = useMarca()
+  const [esSuperadmin, setEsSuperadmin] = useState(false)
 
   useEffect(() => {
-    let activo = true
-    async function cargar() {
-      const u = await supabase
+  let activo = true
+  async function cargar() {
+    const [u, sa] = await Promise.all([
+      supabase
         .from('usuarios_panel')
         .select('nombre, rol, restaurante_id')
         .eq('user_id', session.user.id)
-        .single()
-      if (!activo) return
-      if (u.data) {
-        setPerfil({ nombre: (u.data as any).nombre, rol: (u.data as any).rol })
-        const rid = (u.data as any).restaurante_id
-        setRestauranteId(rid)
+        .single(),
+      supabase.rpc('es_superadmin')
+    ])
+    if (!activo) return
 
-        const [cola, rangos, cfg, horario] = await Promise.all([
-          supabase.from('v_cola_hoy').select('*'),
-          supabase.from('config_tiempos').select('id, tipo, orden, etiqueta')
-            .eq('restaurante_id', rid).order('tipo').order('orden'),
-          supabase.from('restaurantes')
-            .select('id, minutos_antes_preguntar, minutos_antes_jefe, modo_notificacion, rango_cocina_activo, rango_domicilio_activo, metodos_pago')
-            .eq('id', rid).single(),
-          supabase.rpc('obtener_horarios_dia')
-        ])
-        if (!activo) return
-        if (cola.data)   setCola(cola.data as ColaItem[])
-        if (rangos.data) setRangos(rangos.data as RangoTiempo[])
-        if (cfg.data) {
-          setConfig(cfg.data as ConfigRestaurante)
-          setMetodosPago(parseMetodosPago((cfg.data as any).metodos_pago))
-        }
-        if (horario.data && (horario.data as any).dias) {
-          const map: Record<number, DiaHorario> = {}
-          ;((horario.data as any).dias as DiaHorario[]).forEach(d => {
-            map[d.dia_semana] = {
-              dia_semana: d.dia_semana,
-              hora_apertura: d.hora_apertura ?? '17:00',
-              hora_cierre: d.hora_cierre ?? '23:00',
-              hora_apertura_2: (d as any).hora_apertura_2 ?? '',
-              hora_cierre_2: (d as any).hora_cierre_2 ?? '',
-              cerrado: d.cerrado
-            }
-          })
-          setDias(map)
-        }
-      }
-      setCargando(false)
+    const esSA = sa.data === true
+    setEsSuperadmin(esSA)
+
+    // El superadmin puede no tener fila en usuarios_panel para este negocio.
+    // En ese caso el negocio activo ya quedó alineado contra RESTAURANTE_ID
+    // por el gate de Layout.tsx antes de que esta pantalla llegue a montar.
+    const rid = u.data ? (u.data as any).restaurante_id : (esSA ? RESTAURANTE_ID : null)
+
+    if (u.data) {
+      setPerfil({ nombre: (u.data as any).nombre, rol: (u.data as any).rol })
     }
-    cargar()
-    return () => { activo = false }
-  }, [session.user.id])
+
+    if (rid) {
+      setRestauranteId(rid)
+
+      const [cola, rangos, cfg, horario] = await Promise.all([
+        supabase.from('v_cola_hoy').select('*'),
+        supabase.from('config_tiempos').select('id, tipo, orden, etiqueta')
+          .eq('restaurante_id', rid).order('tipo').order('orden'),
+        supabase.from('restaurantes')
+          .select('id, minutos_antes_preguntar, minutos_antes_jefe, modo_notificacion, rango_cocina_activo, rango_domicilio_activo, metodos_pago')
+          .eq('id', rid).single(),
+        supabase.rpc('obtener_horarios_dia')
+      ])
+      if (!activo) return
+      if (cola.data)   setCola(cola.data as ColaItem[])
+      if (rangos.data) setRangos(rangos.data as RangoTiempo[])
+      if (cfg.data) {
+        setConfig(cfg.data as ConfigRestaurante)
+        setMetodosPago(parseMetodosPago((cfg.data as any).metodos_pago))
+      }
+      if (horario.data && (horario.data as any).dias) {
+        const map: Record<number, DiaHorario> = {}
+        ;((horario.data as any).dias as DiaHorario[]).forEach(d => {
+          map[d.dia_semana] = {
+            dia_semana: d.dia_semana,
+            hora_apertura: d.hora_apertura ?? '17:00',
+            hora_cierre: d.hora_cierre ?? '23:00',
+            hora_apertura_2: (d as any).hora_apertura_2 ?? '',
+            hora_cierre_2: (d as any).hora_cierre_2 ?? '',
+            cerrado: d.cerrado
+          }
+        })
+        setDias(map)
+      }
+    }
+    setCargando(false)
+  }
+  cargar()
+  return () => { activo = false }
+}, [session.user.id])
 
   useEffect(() => {
     const channel = supabase
@@ -171,7 +187,7 @@ export default function Logistica({ session }: { session: Session }) {
     return () => { supabase.removeChannel(channel) }
   }, [])
 
-  const esDueno = perfil?.rol === 'dueno'
+  const esDueno = perfil?.rol === 'dueno' || esSuperadmin
 
   const rangosCocina    = useMemo(() => rangos.filter(r => r.tipo === 'cocina'), [rangos])
   const rangosDomicilio = useMemo(() => rangos.filter(r => r.tipo === 'domicilio'), [rangos])

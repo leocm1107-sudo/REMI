@@ -134,7 +134,7 @@ export default function Layout({ session }: { session: Session }) {
   if (estado === 'pendiente') return <PantallaEspera onSalir={cerrarSesion} tipo="pendiente" />
   if (estado === 'rechazado') return <PantallaEspera onSalir={cerrarSesion} tipo="rechazado" />
 
-  const esDueno = perfil?.rol === 'dueno'
+  const esDueno = perfil?.rol === 'dueno' || esSuperadmin
   const F = marca.features ?? {}
   const visibles: Seccion[] = [
     ...seccionesDe(V).filter(s =>
