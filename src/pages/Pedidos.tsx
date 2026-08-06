@@ -29,15 +29,14 @@ export default function Pedidos({ session }: { session: Session }) {
   // 1) Restaurante del usuario logueado (multi-tenant)
   useEffect(() => {
     let activo = true
-    supabase
-      .from('usuarios_panel')
-      .select('restaurante_id')
-      .eq('user_id', session.user.id)
-      .single()
-      .then(({ data }) => {
-        if (activo && data) setRestauranteId((data as any).restaurante_id)
-        if (activo && !data) setCargando(false)
-      })
+    // Mismo criterio que las políticas RLS. Sacarlo de usuarios_panel hacía
+    // que un superadmin pidiera los pedidos de SU negocio estando parado en
+    // el panel de otro: la consulta volvía vacía sin error visible.
+    supabase.rpc('mi_restaurante_id').then(({ data }) => {
+      if (!activo) return
+      if (data) setRestauranteId(data as string)
+      else setCargando(false)
+    })
     return () => { activo = false }
   }, [session.user.id])
 

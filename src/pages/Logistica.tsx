@@ -6,7 +6,6 @@ import { cn, formatCOP } from '../lib/utils'
 import type { PerfilUsuario } from '../lib/types'
 import { useMarca } from '../lib/tema'
 import Festivos from '../components/Festivos'
-import { RESTAURANTE_ID } from '../lib/tema'
 
 type ColaItem = {
   id: string
@@ -112,23 +111,30 @@ export default function Logistica({ session }: { session: Session }) {
   useEffect(() => {
   let activo = true
   async function cargar() {
-    const [u, sa] = await Promise.all([
+    // El negocio NO sale de usuarios_panel.
+    //
+    // Esa fila apunta al negocio "de" la persona, y para un superadmin eso
+    // es uno solo aunque pueda entrar al panel de cualquiera: la pantalla
+    // pedía datos de un negocio mientras RLS filtraba por otro, y todo
+    // llegaba vacío con un 406.
+    //
+    // mi_restaurante_id() devuelve exactamente lo mismo que aplican las
+    // políticas, así que lo que se pide es lo que la base deja ver.
+    const [u, sa, rest] = await Promise.all([
       supabase
         .from('usuarios_panel')
-        .select('nombre, rol, restaurante_id')
+        .select('nombre, rol')
         .eq('user_id', session.user.id)
-        .single(),
-      supabase.rpc('es_superadmin')
+        .maybeSingle(),
+      supabase.rpc('es_superadmin'),
+      supabase.rpc('mi_restaurante_id'),
     ])
     if (!activo) return
 
     const esSA = sa.data === true
     setEsSuperadmin(esSA)
 
-    // El superadmin puede no tener fila en usuarios_panel para este negocio.
-    // En ese caso el negocio activo ya quedó alineado contra RESTAURANTE_ID
-    // por el gate de Layout.tsx antes de que esta pantalla llegue a montar.
-    const rid = u.data ? (u.data as any).restaurante_id : (esSA ? RESTAURANTE_ID : null)
+    const rid = (rest.data as string | null) ?? null
 
     if (u.data) {
       setPerfil({ nombre: (u.data as any).nombre, rol: (u.data as any).rol })

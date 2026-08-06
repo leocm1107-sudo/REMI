@@ -142,8 +142,12 @@ export default function Citas({ session }: { session: Session }) {
     (async () => {
       const u = await supabase.from('usuarios_panel').select('rol').eq('user_id', session.user.id).single()
       setEsDueno(u.data?.rol === 'dueno')
-      const r = await supabase.from('categorias').select('restaurante_id').limit(1).maybeSingle()
-      if (r.data?.restaurante_id) setRestauranteId(r.data.restaurante_id as string)
+      // Antes se deducía leyendo cualquier categoría y confiando en que RLS
+      // devolviera la del negocio correcto. Funciona, pero es indirecto y se
+      // rompe si el negocio no tiene categorías. mi_restaurante_id() lo dice
+      // directo, y es la misma fuente que aplican las políticas.
+      const r = await supabase.rpc('mi_restaurante_id')
+      if (r.data) setRestauranteId(r.data as string)
       const e = await supabase.from('empleados').select('id').eq('usuario_id', session.user.id).maybeSingle()
       if (e.data?.id) setMiEmpleadoId(e.data.id as string)
       const sv = await supabase.rpc('servicios_agendables')
